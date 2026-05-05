@@ -1,0 +1,105 @@
+# ───────────────────────────────────────────────────────────────
+# Python
+# ───────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+pip-wheel-metadata/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+
+# Type checkers
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# ───────────────────────────────────────────────────────────────
+# Virtual environments
+# ───────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ───────────────────────────────────────────────────────────────
+# Environment / secrets
+# ───────────────────────────────────────────────────────────────
+.env
+.env.*
+*.env
+*.local
+secrets.yml
+secrets.yaml
+
+# ───────────────────────────────────────────────────────────────
+# Logs
+# ───────────────────────────────────────────────────────────────
+*.log
+logs/
+*.out
+*.err
+
+# ───────────────────────────────────────────────────────────────
+# OS files (Windows / macOS / Linux)
+# ───────────────────────────────────────────────────────────────
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+ehthumbs.db
+
+# Linux
+*~
+
+# ───────────────────────────────────────────────────────────────
+# IDE / Editor
+# ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# ───────────────────────────────────────────────────────────────
+# Misc
+# ───────────────────────────────────────────────────────────────
+*.bak
+*.tmp
+*.temp
+*.old
