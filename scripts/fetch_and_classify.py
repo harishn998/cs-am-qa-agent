@@ -89,7 +89,7 @@ INTERNAL_TITLE_KEYWORDS = [
 #   - summary sub-fields: short_summary, action_items, keywords
 #   - meeting_info sub-fields: fred_joined, silent_meeting, summary_status
 TRANSCRIPTS_QUERY = """
-query GetTranscripts($fromDate: String, $toDate: String, $limit: Int, $skip: Int) {
+query GetTranscripts($fromDate: DateTime, $toDate: DateTime, $limit: Int, $skip: Int) {
   transcripts(
     fromDate: $fromDate
     toDate: $toDate
