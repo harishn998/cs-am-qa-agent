@@ -81,8 +81,15 @@ INTERNAL_TITLE_KEYWORDS = [
 
 
 # ─── Fireflies GraphQL Query ──────────────────────────────────────────────────
+# Field names verified against live Fireflies GraphQL schema.
+# Key differences from docs:
+#   - Date field is "dateString" (ISO string), not "date"
+#   - fromDate/toDate are filter args on transcripts()
+#   - meeting_attendees uses "displayName" (camelCase)
+#   - summary sub-fields: short_summary, action_items, keywords
+#   - meeting_info sub-fields: fred_joined, silent_meeting, summary_status
 TRANSCRIPTS_QUERY = """
-query GetTranscripts($fromDate: String!, $toDate: String!, $limit: Int!, $skip: Int!) {
+query GetTranscripts($fromDate: String, $toDate: String, $limit: Int, $skip: Int) {
   transcripts(
     fromDate: $fromDate
     toDate: $toDate
@@ -91,7 +98,7 @@ query GetTranscripts($fromDate: String!, $toDate: String!, $limit: Int!, $skip: 
   ) {
     id
     title
-    date
+    dateString
     duration
     organizer_email
     meeting_link
@@ -116,7 +123,7 @@ query GetTranscripts($fromDate: String!, $toDate: String!, $limit: Int!, $skip: 
 
 
 def gql(query: str, variables: dict) -> dict:
-    """Execute a Fireflies GraphQL query."""
+    """Execute a Fireflies GraphQL query with error logging."""
     resp = requests.post(
         FIREFLIES_API_URL,
         json={"query": query, "variables": variables},
@@ -126,6 +133,9 @@ def gql(query: str, variables: dict) -> dict:
         },
         timeout=30,
     )
+    # Log response body on error for easier debugging
+    if not resp.ok:
+        log.error(f"HTTP {resp.status_code} from Fireflies API: {resp.text[:500]}")
     resp.raise_for_status()
     data = resp.json()
     if "errors" in data:
@@ -321,7 +331,7 @@ def main():
         structured = {
             "id": call["id"],
             "title": call.get("title") or "Untitled",
-            "date": call.get("date") or "",
+            "date": call.get("dateString") or "",
             "duration_minutes": round(call.get("duration") or 0, 1),
             "organizer_email": (call.get("organizer_email") or "").lower(),
             "call_type": call_type,       # CS_AM | OPS | INTERNAL | SKIP
