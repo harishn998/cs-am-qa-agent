@@ -59,7 +59,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           echo "::group::Phase 2 — Grade Calls"
-          cd scripts && python grade_calls.py
+          python scripts/grade_calls.py
           echo "::endgroup::"
 
       - name: Phase 2 summary
@@ -79,7 +79,7 @@ jobs:
       - name: "Phase 3 — Aggregate Digest"
         run: |
           echo "::group::Phase 3 — Aggregate"
-          cd scripts && python aggregate.py
+          python scripts/aggregate.py
           echo "::endgroup::"
 
       - name: Phase 3 summary
@@ -105,7 +105,7 @@ jobs:
           SLACK_BOT_TOKEN:  ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
           echo "::group::Phase 4 — Deliver"
-          cd scripts && python deliver.py
+          python scripts/deliver.py
           echo "::endgroup::"
 
       - name: "Phase 4 — SKIPPED (test mode)"

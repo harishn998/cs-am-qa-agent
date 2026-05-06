@@ -32,17 +32,17 @@ log = logging.getLogger(__name__)
 RESEND_API_KEY  = os.environ["RESEND_API_KEY"]
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 
-OUTPUT_DIR      = Path("output")
+OUTPUT_DIR      = Path(__file__).parent.parent / "output"
 TEMPLATES_DIR   = Path(__file__).parent / "templates"
 
 # Recipients
-LAKSHITA_EMAIL  = "harishnath@amzprep.com"
-THOMAS_EMAIL    = "jerun@amzprep.com"
+LAKSHITA_EMAIL  = "lakshita@amzprep.com"
+THOMAS_EMAIL    = "thomas@amzprep.com"
 ARI_EMAIL       = "ari@amzprep.com"
 
 # Slack User IDs
-LAKSHITA_SLACK  = "U07HW2GFSG4"   # ← replace with real Slack user ID
-THOMAS_SLACK    = "U0ACYKH849J"     # ← replace with real Slack user ID
+LAKSHITA_SLACK  = "LAKSHITA_SLACK_ID"   # ← replace with real Slack user ID
+THOMAS_SLACK    = "THOMAS_SLACK_ID"     # ← replace with real Slack user ID
 ARI_SLACK       = "U06CP1PJN3Y"         # Ari's confirmed Slack ID
 
 FROM_EMAIL      = "reports@amzprep.com"

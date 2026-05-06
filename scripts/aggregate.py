@@ -28,7 +28,8 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-OUTPUT_DIR = Path("output")
+# Always resolve output/ relative to repo root (one level up from scripts/)
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 

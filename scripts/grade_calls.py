@@ -41,7 +41,8 @@ CLAUDE_MODEL      = "claude-sonnet-4-5"
 MAX_TOKENS        = 1000
 RATE_LIMIT_DELAY  = 1.5   # seconds between API calls
 
-OUTPUT_DIR = Path("output")
+# Always resolve output/ relative to repo root (one level up from scripts/)
+OUTPUT_DIR = Path(__file__).parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 
