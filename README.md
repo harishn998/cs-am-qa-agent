@@ -17,22 +17,6 @@ Phase 4 — Delivery           (Monday 9 AM ET)     ← coming next
 Phase 5 — GitHub Actions     cron orchestration   ← coming next
 ```
 
-## Team Members Monitored
-
-| Name | Email |
-|---|---|
-| Navesh Khedu | navesh@amzprep.com |
-| Jacob Penney | jacob@amzprep.com |
-| Furqan Ali | furqan@amzprep.com |
-| Omer Muhammad | omer@amzprep.com |
-| Deepakshi Sharma | deepakshi@amzprep.com |
-| Prakash Thakkar | prakash@amzprep.com |
-| Danny Prabudial | dan@amzprep.com |
-| Lakshita Dang | lakshita@amzprep.com |
-| Thomas Gewarges | thomas@amzprep.com |
-| Trini Baldon | trini@amzprep.com |
-| Roshni Nair | roshni@amzprep.com |
-
 ## Call Classification
 
 | Type | Rubric Applied | Examples |

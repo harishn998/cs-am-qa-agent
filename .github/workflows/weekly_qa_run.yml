@@ -1,0 +1,146 @@
+name: Zeno — Weekly CS/AM Call QA
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_delivery:
+        description: 'Skip email + Slack delivery (test mode)'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+  # Every Monday at 9:00 AM ET (14:00 UTC)
+  schedule:
+    - cron: '0 14 * * 1'
+
+jobs:
+  run-qa-pipeline:
+    name: Zeno QA Pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      # ── Phase 1: Fetch & Classify ────────────────────────────────────────────
+      - name: "Phase 1 — Fetch & Classify Fireflies Calls"
+        env:
+          FIREFLIES_API_KEY: ${{ secrets.FIREFLIES_API_KEY }}
+        run: |
+          echo "::group::Phase 1 — Fetch & Classify"
+          python scripts/fetch_and_classify.py
+          echo "::endgroup::"
+
+      - name: Phase 1 summary
+        run: |
+          python -c "
+          import json, glob
+          f = sorted(glob.glob('output/calls_*.json'))[-1]
+          d = json.load(open(f))
+          s = d['summary']
+          print(f'✅ Phase 1 complete')
+          print(f'   Fetched: {s[\"total_fetched\"]} | Team calls: {s[\"team_involved\"]} | Gradeable: {s[\"gradeable\"]}')
+          print(f'   CS/AM: {s[\"classification_counts\"][\"CS_AM\"]} | OPS: {s[\"classification_counts\"][\"OPS\"]} | Internal: {s[\"classification_counts\"][\"INTERNAL\"]} | Skip: {s[\"classification_counts\"][\"SKIP\"]}')
+          "
+
+      # ── Phase 2: Grade Calls ─────────────────────────────────────────────────
+      - name: "Phase 2 — Grade Calls with Claude (Zeno)"
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "::group::Phase 2 — Grade Calls"
+          cd scripts && python grade_calls.py
+          echo "::endgroup::"
+
+      - name: Phase 2 summary
+        run: |
+          python -c "
+          import json, glob
+          f = sorted(glob.glob('output/graded_*.json'))[-1]
+          d = json.load(open(f))
+          graded = [c for c in d['calls'] if c.get('score_total') is not None and c['call_type'] in ('CS_AM','OPS')]
+          failed = [c for c in d['calls'] if c['call_type'] in ('CS_AM','OPS') and c.get('score_total') is None]
+          avg = round(sum(c['score_total'] for c in graded)/len(graded),1) if graded else 0
+          print(f'✅ Phase 2 complete')
+          print(f'   Graded: {len(graded)} | Failed: {len(failed)} | Avg score: {avg}')
+          "
+
+      # ── Phase 3: Aggregate ───────────────────────────────────────────────────
+      - name: "Phase 3 — Aggregate Digest"
+        run: |
+          echo "::group::Phase 3 — Aggregate"
+          cd scripts && python aggregate.py
+          echo "::endgroup::"
+
+      - name: Phase 3 summary
+        run: |
+          python -c "
+          import json, glob
+          f = sorted(glob.glob('output/digest_*.json'))[-1]
+          d = json.load(open(f))
+          o = d['overall']
+          print(f'✅ Phase 3 complete')
+          print(f'   Avg score: {o.get(\"avg_score\")} | Flags: {o.get(\"total_flags\")} | Missing FF: {len(d.get(\"missing_fireflies\") or [])} | Repeats: {len(d.get(\"repeat_issues\") or [])}')
+          top = d.get('top_calls') or []
+          bot = d.get('bottom_calls') or []
+          if top: print(f'   Top call: {top[0][\"title\"]} ({top[0][\"score_total\"]}pts)')
+          if bot: print(f'   Bottom call: {bot[0][\"title\"]} ({bot[0][\"score_total\"]}pts)')
+          "
+
+      # ── Phase 4: Deliver ─────────────────────────────────────────────────────
+      - name: "Phase 4 — Deliver via Zeno (Email + Slack)"
+        if: ${{ github.event.inputs.skip_delivery != 'true' }}
+        env:
+          RESEND_API_KEY:   ${{ secrets.RESEND_API_KEY }}
+          SLACK_BOT_TOKEN:  ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          echo "::group::Phase 4 — Deliver"
+          cd scripts && python deliver.py
+          echo "::endgroup::"
+
+      - name: "Phase 4 — SKIPPED (test mode)"
+        if: ${{ github.event.inputs.skip_delivery == 'true' }}
+        run: echo "⏭ Delivery skipped — test mode enabled"
+
+      # ── Upload all artifacts ─────────────────────────────────────────────────
+      - name: Upload output artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeno-digest-${{ github.run_id }}
+          path: output/
+          retention-days: 30
+
+      # ── Failure notification ─────────────────────────────────────────────────
+      - name: Notify failure via Slack
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          python -c "
+          import os, requests
+          token = os.environ['SLACK_BOT_TOKEN']
+          # DM Ari on failure
+          ch = requests.post('https://slack.com/api/conversations.open',
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            json={'users': 'U06CP1PJN3Y'}).json()['channel']['id']
+          requests.post('https://slack.com/api/chat.postMessage',
+            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+            json={
+              'channel': ch,
+              'text': '❌ Zeno pipeline failed on ${{ github.run_id }} — check Actions: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}',
+              'username': 'Zeno',
+              'icon_emoji': ':zap:'
+            })
+          print('Failure alert sent to Ari')
+          "

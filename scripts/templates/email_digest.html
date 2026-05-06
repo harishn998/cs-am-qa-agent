@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Zeno Weekly Call QA Digest</title>
+<style>
+  body { margin:0; padding:0; background:#f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color:#1a1a2e; }
+  .wrapper { max-width:680px; margin:0 auto; padding:24px 16px; }
+
+  /* Header */
+  .header { background:linear-gradient(135deg,#1E3A5F 0%,#2E75B6 100%); border-radius:12px 12px 0 0; padding:32px 36px; }
+  .header-logo { font-size:22px; font-weight:800; color:#fff; letter-spacing:1px; }
+  .header-logo span { color:#64B5F6; }
+  .header-subtitle { color:#90CAF9; font-size:13px; margin-top:4px; }
+  .header-week { color:#fff; font-size:15px; margin-top:16px; font-weight:600; }
+
+  /* Sections */
+  .section { background:#fff; padding:28px 36px; border-left:1px solid #e8edf2; border-right:1px solid #e8edf2; }
+  .section:last-of-type { border-radius:0 0 12px 12px; border-bottom:1px solid #e8edf2; }
+  .section-title { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:1.2px; color:#2E75B6; margin:0 0 16px 0; padding-bottom:8px; border-bottom:2px solid #e8edf2; }
+
+  /* Overall stats bar */
+  .stats-row { display:flex; gap:12px; margin-bottom:0; }
+  .stat-card { flex:1; background:#f8fafd; border:1px solid #e0e8f0; border-radius:8px; padding:14px 16px; text-align:center; }
+  .stat-card .value { font-size:26px; font-weight:800; color:#1E3A5F; }
+  .stat-card .label { font-size:11px; color:#6b7a8d; margin-top:2px; text-transform:uppercase; letter-spacing:0.5px; }
+
+  /* Rep scorecard table */
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { background:#f0f4f8; color:#4a5568; font-weight:600; text-align:left; padding:9px 12px; font-size:12px; text-transform:uppercase; letter-spacing:0.5px; }
+  td { padding:10px 12px; border-bottom:1px solid #f0f4f8; vertical-align:middle; }
+  tr:last-child td { border-bottom:none; }
+  tr:hover td { background:#fafbfd; }
+
+  /* Grade badges */
+  .badge { display:inline-block; padding:3px 9px; border-radius:20px; font-size:12px; font-weight:700; }
+  .grade-A { background:#e8f5e9; color:#2e7d32; }
+  .grade-B { background:#e3f2fd; color:#1565c0; }
+  .grade-C { background:#fff8e1; color:#f57f17; }
+  .grade-D { background:#fce4ec; color:#c62828; }
+
+  /* Trend arrows */
+  .trend-up     { color:#2e7d32; font-weight:700; }
+  .trend-down   { color:#c62828; font-weight:700; }
+  .trend-stable { color:#6b7a8d; }
+  .trend-new    { color:#7b1fa2; font-size:11px; }
+
+  /* Call cards */
+  .call-card { background:#f8fafd; border:1px solid #e0e8f0; border-radius:8px; padding:16px 18px; margin-bottom:12px; }
+  .call-card:last-child { margin-bottom:0; }
+  .call-title { font-weight:700; font-size:14px; color:#1E3A5F; margin-bottom:4px; }
+  .call-meta { font-size:12px; color:#6b7a8d; margin-bottom:8px; }
+  .call-score { font-size:20px; font-weight:800; }
+  .call-coaching { background:#fff8e1; border-left:3px solid #f9a825; padding:10px 12px; font-size:12px; color:#5d4037; border-radius:0 4px 4px 0; margin-top:10px; line-height:1.5; }
+  .call-link { font-size:12px; color:#2E75B6; text-decoration:none; font-weight:600; }
+  .call-link:hover { text-decoration:underline; }
+
+  /* Flag pills */
+  .flag-pill { display:inline-block; background:#fff0f0; color:#c62828; border:1px solid #ffcdd2; border-radius:20px; padding:2px 10px; font-size:11px; font-weight:600; margin:2px 2px 2px 0; }
+  .flag-title { font-weight:600; font-size:13px; color:#c62828; margin-bottom:6px; }
+
+  /* Divider */
+  .divider { height:1px; background:#e8edf2; margin:20px 0; }
+
+  /* Footer */
+  .footer { text-align:center; padding:20px; font-size:11px; color:#9aa5b1; }
+  .footer strong { color:#2E75B6; }
+
+  /* Alert banner */
+  .alert { background:#fff3cd; border:1px solid #ffc107; border-radius:8px; padding:12px 16px; font-size:13px; color:#856404; margin-bottom:16px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">⚡ <span>ZENO</span></div>
+    <div class="header-subtitle">CS/AM Call Quality Agent — AMZ Prep</div>
+    <div class="header-week">Weekly Digest · {{week_range}}</div>
+  </div>
+
+  <!-- Overall Stats -->
+  <div class="section">
+    <div class="section-title">📊 Week at a Glance</div>
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="value">{{total_graded}}</div>
+        <div class="label">Calls Graded</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">{{avg_score}}</div>
+        <div class="label">Avg Score</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">{{total_flags}}</div>
+        <div class="label">Flags Raised</div>
+      </div>
+      <div class="stat-card">
+        <div class="value">{{missing_ff}}</div>
+        <div class="label">Missing Fireflies</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rep Scorecard -->
+  <div class="section">
+    <div class="section-title">👥 Team Scorecard</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Rep</th>
+          <th>Calls</th>
+          <th>Avg Score</th>
+          <th>Grade</th>
+          <th>Trend</th>
+          <th>Flags</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{rep_scorecard_rows}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Top Calls -->
+  <div class="section">
+    <div class="section-title">🏆 Top 3 Calls — Share in Huddle</div>
+    {{top_calls_html}}
+  </div>
+
+  <!-- Bottom Calls -->
+  <div class="section">
+    <div class="section-title">🎯 Bottom 3 Calls — Coaching Required</div>
+    {{bottom_calls_html}}
+  </div>
+
+  <!-- Auto-Flagged Calls -->
+  {{flagged_section_html}}
+
+  <!-- Missing Fireflies -->
+  {{missing_ff_section_html}}
+
+  <!-- Repeat Issues -->
+  {{repeat_issues_html}}
+
+  <!-- Footer -->
+  <div class="footer">
+    Sent by <strong>Zeno</strong> · AMZ Prep Call QA Agent<br/>
+    Questions? Reach out to Ari · <a href="mailto:ari@amzprep.com" style="color:#2E75B6;">ari@amzprep.com</a>
+  </div>
+
+</div>
+</body>
+</html>
