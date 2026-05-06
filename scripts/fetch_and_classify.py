@@ -294,7 +294,7 @@ def build_rep_call_map(classified_calls: list[dict]) -> dict:
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
     today = datetime.now(timezone.utc)
-    from_date = (today - timedelta(days=7)).strftime("%Y-%m-%d")
+    from_date = (today - timedelta(days=14)).strftime("%Y-%m-%d")
     to_date = today.strftime("%Y-%m-%d")
 
     log.info(f"=== CS/AM Call QA Agent — Phase 1 ===")

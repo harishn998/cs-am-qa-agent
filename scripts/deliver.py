@@ -150,34 +150,34 @@ def build_email_html(digest: dict, recipient_name: str) -> str:
     # ── Flagged calls section ──────────────────────────────────────────────────
     flagged = digest.get("flagged_calls") or {}
     if flagged:
-        flagged_html = '<div class="section"><div class="section-title">🚩 Auto-Flagged Calls — Manager Review</div>'
+        flagged_html = '<div class="section"><div class="section-title">Auto-Flagged Calls — Manager Review</div>'
         for flag_key, flag_calls in flagged.items():
             flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
-            flagged_html += f'<div class="flag-title">⚠ {flag_label}</div>'
+            flagged_html += f'<div class="flag-title">{flag_label}</div>'
             for fc in flag_calls:
                 score_txt = f" · Score: {fc['score_total']}" if fc.get("score_total") is not None else ""
                 flagged_html += f'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #f0f4f8;"><a href="{fc["fireflies_url"]}" class="call-link">{fc["title"]}</a> <span style="color:#6b7a8d;">— {fc.get("date","")[:10]}{score_txt}</span></div>'
             flagged_html += '<div class="divider"></div>'
         flagged_html += "</div>"
     else:
-        flagged_html = '<div class="section"><div class="section-title">🚩 Auto-Flagged Calls</div><p style="color:#6b7a8d;font-size:13px;">No flags raised this week. ✅</p></div>'
+        flagged_html = '<div class="section"><div class="section-title">Auto-Flagged Calls</div><p style="color:#6b7a8d;font-size:13px;">No flags raised this week.</p></div>'
     template = template.replace("{{flagged_section_html}}", flagged_html)
 
     # ── Missing Fireflies ──────────────────────────────────────────────────────
     missing = digest.get("missing_fireflies") or []
     if missing:
-        mff_html = '<div class="section"><div class="section-title">🎙 Missing Fireflies Recordings</div><div class="alert">These calls were not recorded. Check Chrome extension on affected machines.</div>'
+        mff_html = '<div class="section"><div class="section-title">Missing Fireflies Recordings</div><div class="alert">These calls were not recorded. Check Chrome extension on affected machines.</div>'
         for mf in missing:
             mff_html += f'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #f0f4f8;">{mf["title"]} <span style="color:#6b7a8d;">— {mf.get("organizer","")} · {mf.get("date","")[:10]}</span></div>'
         mff_html += "</div>"
     else:
-        mff_html = '<div class="section"><div class="section-title">🎙 Fireflies Coverage</div><p style="color:#2e7d32;font-size:13px;">✅ All calls recorded this week.</p></div>'
+        mff_html = '<div class="section"><div class="section-title">Fireflies Coverage</div><p style="color:#2e7d32;font-size:13px;">All calls recorded this week.</p></div>'
     template = template.replace("{{missing_ff_section_html}}", mff_html)
 
     # ── Repeat issues ──────────────────────────────────────────────────────────
     repeats = digest.get("repeat_issues") or []
     if repeats:
-        rep_html = '<div class="section"><div class="section-title">🔁 Repeat Issue Accounts</div>'
+        rep_html = '<div class="section"><div class="section-title">Repeat Issue Accounts</div>'
         for r in repeats:
             rep_html += f'<div class="call-card"><strong>{r["client_domain"]}</strong> · {r["rep_name"]}<div style="font-size:12px;color:#6b7a8d;margin-top:4px;">{r["note"]}</div></div>'
         rep_html += "</div>"
@@ -232,20 +232,20 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
     blocks = [
         {
             "type": "header",
-            "text": {"type": "plain_text", "text": "⚡ Zeno — Weekly Call QA Digest"}
+            "text": {"type": "plain_text", "text": "Zeno — Weekly Call QA Digest"}
         },
         {
             "type": "context",
-            "elements": [{"type": "mrkdwn", "text": f"Week: *{week_range}*  |  Hi {recipient_name} 👋"}]
+            "elements": [{"type": "mrkdwn", "text": f"Week: *{week_range}*  |  Hi {recipient_name}"}]
         },
         {"type": "divider"},
         {
             "type": "section",
             "fields": [
-                {"type": "mrkdwn", "text": f"*📞 Calls Graded*\n{graded}"},
-                {"type": "mrkdwn", "text": f"*📊 Avg Team Score*\n{avg}/100"},
-                {"type": "mrkdwn", "text": f"*🚩 Flags Raised*\n{flags}"},
-                {"type": "mrkdwn", "text": f"*🎙 Missing Fireflies*\n{missing_ff}"},
+                {"type": "mrkdwn", "text": f"*Calls Graded*\n{graded}"},
+                {"type": "mrkdwn", "text": f"*Avg Team Score*\n{avg}/100"},
+                {"type": "mrkdwn", "text": f"*Flags Raised*\n{flags}"},
+                {"type": "mrkdwn", "text": f"*Missing Fireflies*\n{missing_ff}"},
             ]
         },
         {
@@ -256,8 +256,8 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
     ]
 
     # Rep scorecard
-    scorecard_lines = ["*👥 Team Scorecard*"]
-    trend_icons = {"up": "↑", "down": "↓", "stable": "→", "new": "★", "no_calls": "—"}
+    scorecard_lines = ["*Team Scorecard*"]
+    trend_icons = {"up": "↑", "down": "↓", "stable": "→", "new": "new", "no_calls": "—"}
     for rep in digest["rep_scorecard"]:
         if rep["call_count"] == 0:
             continue
@@ -271,7 +271,7 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
 
     # Top calls
     if digest.get("top_calls"):
-        top_lines = ["*🏆 Top Calls — Share in Huddle*"]
+        top_lines = ["*Top Calls — Share in Huddle*"]
         for tc in digest["top_calls"]:
             top_lines.append(f"• <{tc['fireflies_url']}|{tc['title']}> — Score: *{tc['score_total']}* (Grade {tc.get('grade','')})")
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(top_lines)}})
@@ -279,7 +279,7 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
 
     # Bottom calls
     if digest.get("bottom_calls"):
-        bottom_lines = ["*🎯 Calls Needing Coaching*"]
+        bottom_lines = ["*Calls Needing Coaching*"]
         for bc in digest["bottom_calls"]:
             note = f"\n  _{bc['coaching_note']}_" if bc.get("coaching_note") else ""
             bottom_lines.append(f"• <{bc['fireflies_url']}|{bc['title']}> — Score: *{bc['score_total']}* (Grade {bc.get('grade','')}){note}")
@@ -289,10 +289,9 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
     # Flags
     flagged = digest.get("flagged_calls") or {}
     if flagged:
-        flag_lines = ["*🚩 Auto-Flagged Calls*"]
+        flag_lines = ["*Auto-Flagged Calls*"]
         for flag_key, flag_calls in flagged.items():
-            flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
-            for fc in flag_calls[:3]:   # max 3 per flag type in Slack
+            for fc in flag_calls[:3]:
                 flag_lines.append(f"• `{flag_key}` → <{fc['fireflies_url']}|{fc['title']}>")
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(flag_lines)}})
         blocks.append({"type": "divider"})
@@ -300,7 +299,7 @@ def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
     # Missing Fireflies
     if missing_ff > 0:
         missing = digest.get("missing_fireflies") or []
-        mf_lines = [f"*🎙 {missing_ff} Call(s) Without Fireflies Recording*"]
+        mf_lines = [f"*{missing_ff} Call(s) Without Fireflies Recording*"]
         for mf in missing[:5]:
             mf_lines.append(f"• {mf['title']} ({mf.get('organizer','')}) — {mf.get('date','')[:10]}")
         blocks.append({"type": "section", "text": {"type": "mrkdwn", "text": "\n".join(mf_lines)}})
@@ -360,7 +359,7 @@ def main():
     run_date  = digest["run_date"]
     date_range = digest["date_range"]
     week_range = f"{date_range['from']} → {date_range['to']}"
-    subject    = f"⚡ Zeno Weekly QA Digest — {week_range}"
+    subject    = f"Zeno Weekly QA Digest — {week_range}"
 
     # ── Email delivery ─────────────────────────────────────────────────────────
     log.info("Sending emails via Resend...")
@@ -371,7 +370,7 @@ def main():
 
     # ── Slack delivery ─────────────────────────────────────────────────────────
     log.info("Sending Slack DMs via Zeno...")
-    fallback = f"⚡ Zeno Weekly QA Digest — {week_range}"
+    fallback = f"Zeno Weekly QA Digest — {week_range}"
 
     # DM to Lakshita + Ari
     ch_lakshita = open_slack_dm([LAKSHITA_SLACK, ARI_SLACK])
