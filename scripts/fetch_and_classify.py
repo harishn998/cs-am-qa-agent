@@ -1,12 +1,17 @@
 """
 CS/AM Call QA Agent — Fetch & Classify
 =======================================
-Pulls all Fireflies calls from the past 7 days for the CS/AM/Ops team,
+Pulls all Fireflies calls from the past 14 days for the CS/AM/Ops team,
 classifies each call as CS_AM, OPS, INTERNAL, or SKIP, and outputs a
 structured JSON file ready for Claude grading.
 
+Supports dual Fireflies API keys queried in parallel — results are merged
+and deduplicated by call ID. This ensures private meetings visible to one
+account but not the other are still captured.
+
 GitHub Actions env vars required:
-  FIREFLIES_API_KEY   — Neha's Fireflies API key (admin access)
+  FIREFLIES_API_KEY_PRIMARY    — Neha's key (admin access)
+  FIREFLIES_API_KEY_SECONDARY  — Blair's key (additional coverage, optional)
 
 Output:
   output/calls_<YYYY-MM-DD>.json
@@ -29,7 +34,19 @@ log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 FIREFLIES_API_URL = "https://api.fireflies.ai/graphql"
-FIREFLIES_API_KEY = os.environ["FIREFLIES_API_KEY"]
+
+# Load both keys — secondary is optional
+FIREFLIES_API_KEY_PRIMARY   = os.environ.get("FIREFLIES_API_KEY_PRIMARY") or os.environ.get("FIREFLIES_API_KEY")
+FIREFLIES_API_KEY_SECONDARY = os.environ.get("FIREFLIES_API_KEY_SECONDARY")
+
+if not FIREFLIES_API_KEY_PRIMARY:
+    raise EnvironmentError("FIREFLIES_API_KEY_PRIMARY (or FIREFLIES_API_KEY) must be set")
+
+# Build list of active keys with labels for logging
+FIREFLIES_KEYS = [("primary", FIREFLIES_API_KEY_PRIMARY)]
+if FIREFLIES_API_KEY_SECONDARY:
+    FIREFLIES_KEYS.append(("secondary", FIREFLIES_API_KEY_SECONDARY))
+    log.info(f"Dual key mode enabled — fetching with {len(FIREFLIES_KEYS)} API keys")
 
 OUTPUT_DIR = Path("output")
 OUTPUT_DIR.mkdir(exist_ok=True)
@@ -122,18 +139,17 @@ query GetTranscripts($fromDate: DateTime, $toDate: DateTime, $limit: Int, $skip:
 """
 
 
-def gql(query: str, variables: dict) -> dict:
-    """Execute a Fireflies GraphQL query with error logging."""
+def gql(query: str, variables: dict, api_key: str) -> dict:
+    """Execute a Fireflies GraphQL query with a specific API key."""
     resp = requests.post(
         FIREFLIES_API_URL,
         json={"query": query, "variables": variables},
         headers={
-            "Authorization": f"Bearer {FIREFLIES_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
         timeout=30,
     )
-    # Log response body on error for easier debugging
     if not resp.ok:
         log.error(f"HTTP {resp.status_code} from Fireflies API: {resp.text[:500]}")
     resp.raise_for_status()
@@ -143,34 +159,58 @@ def gql(query: str, variables: dict) -> dict:
     return data["data"]
 
 
-# ─── Fetch all calls from the past 7 days ─────────────────────────────────────
-def fetch_all_calls(from_date: str, to_date: str) -> list[dict]:
+# ─── Fetch all calls from the past 14 days ────────────────────────────────────
+def fetch_from_key(key_label: str, api_key: str, from_date: str, to_date: str) -> list[dict]:
     """
-    Pages through Fireflies transcripts for the date range.
-    Returns raw list of all transcript objects.
+    Pages through all transcripts for one API key.
+    Returns raw list of transcript objects.
     """
     all_calls = []
     skip = 0
     limit = 50
 
     while True:
-        log.info(f"Fetching transcripts — skip={skip}, limit={limit}")
+        log.info(f"  [{key_label}] Fetching — skip={skip}, limit={limit}")
         data = gql(TRANSCRIPTS_QUERY, {
             "fromDate": from_date,
             "toDate": to_date,
             "limit": limit,
             "skip": skip,
-        })
+        }, api_key)
         batch = data.get("transcripts") or []
-        log.info(f"  → Got {len(batch)} transcripts")
+        log.info(f"  [{key_label}] Got {len(batch)} transcripts")
         all_calls.extend(batch)
 
         if len(batch) < limit:
-            break   # last page
+            break
         skip += limit
 
-    log.info(f"Total raw transcripts fetched: {len(all_calls)}")
     return all_calls
+
+
+def fetch_all_calls(from_date: str, to_date: str) -> list[dict]:
+    """
+    Fetches transcripts from all configured API keys and merges results.
+    Deduplicates by call ID — if both keys see the same call, primary wins.
+    """
+    seen_ids: dict[str, dict] = {}   # id → call dict (primary key takes precedence)
+
+    for key_label, api_key in FIREFLIES_KEYS:
+        try:
+            calls = fetch_from_key(key_label, api_key, from_date, to_date)
+            new_count = 0
+            for call in calls:
+                call_id = call.get("id")
+                if call_id and call_id not in seen_ids:
+                    seen_ids[call_id] = call
+                    new_count += 1
+            log.info(f"  [{key_label}] {new_count} new unique calls (total so far: {len(seen_ids)})")
+        except Exception as e:
+            log.error(f"  [{key_label}] Fetch failed: {e} — continuing with other keys")
+
+    merged = list(seen_ids.values())
+    log.info(f"Total unique transcripts after merge: {len(merged)}")
+    return merged
 
 
 # ─── Filter to calls involving our team ───────────────────────────────────────
@@ -297,9 +337,9 @@ def main():
     from_date = (today - timedelta(days=14)).strftime("%Y-%m-%d")
     to_date = today.strftime("%Y-%m-%d")
 
-    log.info(f"=== CS/AM Call QA Agent — Phase 1 ===")
+    log.info(f"=== CS/AM Call QA Agent — Fetch & Classify ===")
     log.info(f"Date range: {from_date} → {to_date}")
-    log.info(f"Monitoring {len(TEAM_EMAILS)} team members")
+    log.info(f"Monitoring {len(TEAM_EMAILS)} team members | API keys: {len(FIREFLIES_KEYS)}")
 
     # 1. Fetch all calls
     raw_calls = fetch_all_calls(from_date, to_date)

@@ -35,7 +35,8 @@ jobs:
       # ── Phase 1: Fetch & Classify ────────────────────────────────────────────
       - name: "Phase 1 — Fetch & Classify Fireflies Calls"
         env:
-          FIREFLIES_API_KEY: ${{ secrets.FIREFLIES_API_KEY }}
+          FIREFLIES_API_KEY_PRIMARY:   ${{ secrets.FIREFLIES_API_KEY_PRIMARY }}
+          FIREFLIES_API_KEY_SECONDARY: ${{ secrets.FIREFLIES_API_KEY_SECONDARY }}
         run: |
           echo "::group::Phase 1 — Fetch & Classify"
           python scripts/fetch_and_classify.py
