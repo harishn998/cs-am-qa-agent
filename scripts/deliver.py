@@ -215,177 +215,201 @@ def send_email(to_email: str, to_name: str, subject: str, html: str) -> bool:
 
 # ─── Build Slack message ──────────────────────────────────────────────────────
 def build_slack_message(digest: dict, recipient_name: str) -> list[dict]:
-    """Builds Slack Block Kit blocks for the weekly digest DM."""
+    """
+    Slack Block Kit message. Hard limits enforced:
+      Max 50 blocks | Max 3000 chars/field | Max 150 chars for header
+    Priority: Summary -> Flags -> Coaching -> Top Calls -> Scorecard -> Missing FF
+    """
     overall    = digest["overall"]
     date_range = digest["date_range"]
-    week_range = f"{date_range['from']}  to  {date_range['to']}"
+    week_range = f"{date_range['from']} to {date_range['to']}"
 
-    avg        = overall.get("avg_score", "—")
-    graded     = overall.get("total_graded", 0)
-    flags      = overall.get("total_flags", 0)
-    missing_ff = len(digest.get("missing_fireflies") or [])
+    avg         = overall.get("avg_score", "—")
+    graded      = overall.get("total_graded", 0)
+    total_flags = overall.get("total_flags", 0)
+    missing_ff  = len(digest.get("missing_fireflies") or [])
+    highest     = overall.get("highest_score", "—")
+    lowest      = overall.get("lowest_score", "—")
+    dist        = overall.get("grade_distribution") or {}
+    trend_map   = {"up": "(+)", "down": "(-)", "stable": "(=)", "new": "new", "no_calls": "—"}
 
-    dist       = overall.get("grade_distribution") or {}
-    highest    = overall.get("highest_score", "—")
-    lowest     = overall.get("lowest_score", "—")
+    def T(text: str, limit: int = 2900) -> str:
+        return text if len(text) <= limit else text[:limit] + "..."
 
-    trend_map  = {"up": "(+)", "down": "(-)", "stable": "(=)", "new": "(new)", "no_calls": ""}
-
-    def divider():
+    def div() -> dict:
         return {"type": "divider"}
 
-    def header(text: str) -> dict:
-        return {"type": "header", "text": {"type": "plain_text", "text": text, "emoji": False}}
+    def hdr(text: str) -> dict:
+        return {"type": "header", "text": {"type": "plain_text", "text": text[:149], "emoji": False}}
 
-    def section(text: str) -> dict:
-        return {"type": "section", "text": {"type": "mrkdwn", "text": text}}
+    def sec(text: str) -> dict:
+        return {"type": "section", "text": {"type": "mrkdwn", "text": T(text)}}
 
-    def fields(*cols: str) -> dict:
-        return {
-            "type": "section",
-            "fields": [{"type": "mrkdwn", "text": c} for c in cols]
-        }
+    def two(left: str, right: str) -> dict:
+        return {"type": "section", "fields": [
+            {"type": "mrkdwn", "text": T(left)},
+            {"type": "mrkdwn", "text": T(right)},
+        ]}
 
-    def context(text: str) -> dict:
-        return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+    def four(a: str, b: str, c: str, d: str) -> dict:
+        return {"type": "section", "fields": [
+            {"type": "mrkdwn", "text": T(a)},
+            {"type": "mrkdwn", "text": T(b)},
+            {"type": "mrkdwn", "text": T(c)},
+            {"type": "mrkdwn", "text": T(d)},
+        ]}
+
+    def ctx(text: str) -> dict:
+        return {"type": "context", "elements": [{"type": "mrkdwn", "text": T(text)}]}
 
     blocks = []
 
-    # ── Title ─────────────────────────────────────────────────────────────────
-    blocks.append(header("Zeno  —  Weekly Call QA Digest"))
-    blocks.append(context(f"Week: {week_range}   |   Report for {recipient_name}"))
-    blocks.append(divider())
+    # 1. HEADER
+    blocks.append(hdr("Zeno — Weekly Call QA Digest"))
+    blocks.append(ctx(f"Week: {week_range}   |   Hi {recipient_name}"))
+    blocks.append(div())
 
-    # ── Week at a Glance ──────────────────────────────────────────────────────
-    blocks.append(section("*WEEK AT A GLANCE*"))
-    blocks.append(fields(
+    # 2. SUMMARY — 2 blocks
+    blocks.append(four(
         f"*Calls Graded*\n`{graded}`",
         f"*Avg Team Score*\n`{avg} / 100`",
-        f"*Flags Raised*\n`{flags}`",
-        f"*Missing Fireflies*\n`{missing_ff}`",
+        f"*Flags Raised*\n`{total_flags}`",
+        f"*Missing Recordings*\n`{missing_ff}`",
     ))
-    blocks.append(fields(
-        f"*Highest Score*\n`{highest}`",
-        f"*Lowest Score*\n`{lowest}`",
-        f"*Grade A*\n`{dist.get('A', 0)}`",
-        f"*Grade B*\n`{dist.get('B', 0)}`",
-    ))
-    blocks.append(fields(
-        f"*Grade C*\n`{dist.get('C', 0)}`",
-        f"*Grade D*\n`{dist.get('D', 0)}`",
-    ))
-    blocks.append(divider())
+    grade_line = "  ".join(f"*{g}:* {dist.get(g, 0)}" for g in ["A", "B", "C", "D"])
+    blocks.append(sec(f"Score range: *{lowest}* — *{highest}*     Grades:  {grade_line}"))
+    blocks.append(div())
 
-    # ── Team Scorecard ────────────────────────────────────────────────────────
-    blocks.append(section("*TEAM SCORECARD*"))
+    # 3. FLAGS — priority sorted, max 4 types x 2 calls each
+    flagged = digest.get("flagged_calls") or {}
+    priority_order = [
+        "churn_language", "competitor_mentioned", "sla_miss_no_resolution",
+        "pricing_pushback", "negative_sentiment_end", "no_next_step",
+        "short_call", "fireflies_missing", "repeat_issue",
+    ]
+    sorted_flags = sorted(
+        flagged.items(),
+        key=lambda x: priority_order.index(x[0]) if x[0] in priority_order else 99
+    )
+    if sorted_flags:
+        blocks.append(sec("*FLAGGED CALLS — Requires Attention*"))
+        for flag_key, flag_calls in sorted_flags[:4]:
+            flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
+            lines = [f"_{flag_label}_"]
+            for fc in flag_calls[:2]:
+                score = f"  Score: `{fc['score_total']}`" if fc.get("score_total") is not None else ""
+                date  = (fc.get("date") or "")[:10]
+                rep   = fc.get("organizer", "").split("@")[0]
+                lines.append(f">  <{fc['fireflies_url']}|{fc['title'][:50]}>   {date}{score}   rep: {rep}")
+            if len(flag_calls) > 2:
+                lines.append(f">  _... and {len(flag_calls) - 2} more in email digest_")
+            blocks.append(sec("\n".join(lines)))
+        if len(sorted_flags) > 4:
+            extra = [digest.get("flag_definitions", {}).get(k, k) for k, _ in sorted_flags[4:]]
+            blocks.append(ctx(f"Additional flags in email: {chr(44).join(extra)}"))
+        blocks.append(div())
 
-    reps_with_calls = [r for r in digest["rep_scorecard"] if r["call_count"] > 0]
-    for rep in reps_with_calls:
-        grade     = rep.get("grade") or "—"
-        avg_sc    = rep.get("avg_score") or "—"
-        calls     = rep["call_count"]
-        trend     = trend_map.get(rep.get("trend", ""), "")
-        flags_rep = rep.get("flag_count", 0)
-        prev      = rep.get("prev_avg_score")
-        prev_txt  = f"Prev: {prev}" if prev else "Prev: —"
-
-        blocks.append(fields(
-            f"*{rep['name']}*\n{calls} calls   Grade: `{grade}`   {trend}",
-            f"Score: `{avg_sc} / 100`\n{prev_txt}   Flags: {flags_rep}",
-        ))
-
-    blocks.append(divider())
-
-    # ── Top Calls ─────────────────────────────────────────────────────────────
-    top_calls = digest.get("top_calls") or []
-    if top_calls:
-        blocks.append(section("*TOP CALLS  —  Share in Team Huddle*"))
-        for i, tc in enumerate(top_calls, 1):
-            members = ", ".join(tc.get("team_members") or [])
-            date    = (tc.get("date") or "")[:10]
-            dur     = tc.get("duration_minutes") or "?"
-            blocks.append(section(
-                f"*{i}.  <{tc['fireflies_url']}|{tc['title']}>*\n"
-                f"Score: `{tc['score_total']} / 100`   Grade: `{tc.get('grade', '—')}`"
-                f"   |   {date}   {dur} min\n"
-                f"Rep: {members}"
-            ))
-        blocks.append(divider())
-
-    # ── Bottom Calls ──────────────────────────────────────────────────────────
+    # 4. CALLS NEEDING COACHING
     bottom_calls = digest.get("bottom_calls") or []
     if bottom_calls:
-        blocks.append(section("*CALLS NEEDING COACHING*"))
-        for i, bc in enumerate(bottom_calls, 1):
-            members = ", ".join(bc.get("team_members") or [])
-            date    = (bc.get("date") or "")[:10]
-            dur     = bc.get("duration_minutes") or "?"
-            note    = bc.get("coaching_note") or "Review call recording for coaching opportunities."
-            flag_list = ", ".join(bc.get("auto_flags") or []) or "none"
-            blocks.append(section(
-                f"*{i}.  <{bc['fireflies_url']}|{bc['title']}>*\n"
-                f"Score: `{bc['score_total']} / 100`   Grade: `{bc.get('grade', '—')}`"
-                f"   |   {date}   {dur} min\n"
-                f"Rep: {members}\n"
-                f"Flags: `{flag_list}`\n"
-                f"_{note}_"
+        blocks.append(sec("*CALLS NEEDING COACHING*"))
+        for bc in bottom_calls:
+            rep   = ", ".join(e.split("@")[0] for e in (bc.get("team_members") or []))
+            date  = (bc.get("date") or "")[:10]
+            dur   = bc.get("duration_minutes") or "?"
+            note  = T((bc.get("coaching_note") or "Review call for coaching opportunities."), 180)
+            score = bc.get("score_total", "—")
+            grade = bc.get("grade", "—")
+            flag_str = ", ".join(bc.get("auto_flags") or []) or "—"
+            blocks.append(two(
+                f"*<{bc['fireflies_url']}|{bc['title'][:48]}>*\n"
+                f"Score: `{score} / 100`   Grade: `{grade}`\n"
+                f"Rep: {rep}   {date}   {dur} min",
+                f"*Flags:*\n`{flag_str}`\n\n*Note:*\n_{note}_",
             ))
-        blocks.append(divider())
+        blocks.append(div())
 
-    # ── Flagged Calls ─────────────────────────────────────────────────────────
-    flagged = digest.get("flagged_calls") or {}
-    if flagged:
-        blocks.append(section("*AUTO-FLAGGED CALLS  —  Manager Review Required*"))
-        for flag_key, flag_calls in flagged.items():
-            flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
-            # Header row for this flag type
-            blocks.append(context(f"Flag:  {flag_label}"))
-            for fc in flag_calls[:4]:
-                score_txt = f"  Score: `{fc['score_total']}`" if fc.get("score_total") is not None else ""
-                date_txt  = (fc.get("date") or "")[:10]
-                blocks.append(section(
-                    f"<{fc['fireflies_url']}|{fc['title']}>\n"
-                    f"{date_txt}{score_txt}   Rep: {fc.get('organizer', '')}"
-                ))
-        blocks.append(divider())
+    # 5. TOP CALLS
+    top_calls = digest.get("top_calls") or []
+    if top_calls:
+        blocks.append(sec("*TOP CALLS — Share in Huddle*"))
+        for tc in top_calls:
+            rep  = ", ".join(e.split("@")[0] for e in (tc.get("team_members") or []))
+            date = (tc.get("date") or "")[:10]
+            dur  = tc.get("duration_minutes") or "?"
+            blocks.append(two(
+                f"*<{tc['fireflies_url']}|{tc['title'][:48]}>*\n"
+                f"Score: `{tc['score_total']} / 100`   Grade: `{tc.get('grade','—')}`",
+                f"Rep: {rep}\n{date}   {dur} min",
+            ))
+        blocks.append(div())
 
-    # ── Missing Fireflies ─────────────────────────────────────────────────────
+    # 6. TEAM SCORECARD — all reps in one monospaced block
+    blocks.append(sec("*TEAM SCORECARD*"))
+    reps = [r for r in digest["rep_scorecard"] if r["call_count"] > 0]
+    lines = ["```"]
+    lines.append(f"{'Rep':<22} {'Calls':>5}  {'Score':>6}  {'Grade':>5}  {'Trend':>6}  {'Flags':>5}")
+    lines.append("─" * 58)
+    for rep in reps:
+        name   = rep["name"][:21]
+        calls  = rep["call_count"]
+        avg_sc = rep.get("avg_score") or "—"
+        grade  = rep.get("grade") or "—"
+        trend  = trend_map.get(rep.get("trend", ""), "—")
+        flags_n= rep.get("flag_count", 0)
+        lines.append(f"{name:<22} {calls:>5}  {str(avg_sc):>6}  {grade:>5}  {trend:>6}  {flags_n:>5}")
+    lines.append("```")
+    blocks.append(sec("\n".join(lines)))
+    blocks.append(div())
+
+    # 7. MISSING FIREFLIES — summary + top 4
     if missing_ff > 0:
         missing = digest.get("missing_fireflies") or []
-        blocks.append(section(f"*MISSING FIREFLIES RECORDINGS  —  {missing_ff} call(s)*"))
-        blocks.append(context("These calls were not captured. Ask the rep to check their Chrome extension."))
-        # Show up to 8, group into field pairs for compact layout
-        shown = missing[:8]
-        for i in range(0, len(shown), 2):
-            pair = shown[i:i+2]
-            col1 = f"*{pair[0]['title'][:40]}*\n{pair[0].get('organizer','')}" if len(pair) > 0 else ""
-            col2 = f"*{pair[1]['title'][:40]}*\n{pair[1].get('organizer','')}" if len(pair) > 1 else ""
-            if col2:
-                blocks.append(fields(col1, col2))
-            else:
-                blocks.append(section(col1))
-        if len(missing) > 8:
-            blocks.append(context(f"... and {len(missing) - 8} more. See full list in email digest."))
-        blocks.append(divider())
+        rep_counts: dict = {}
+        for mf in missing:
+            org = mf.get("organizer", "unknown").split("@")[0]
+            rep_counts[org] = rep_counts.get(org, 0) + 1
+        rep_summary = "   ".join(
+            f"{r}: {c}" for r, c in sorted(rep_counts.items(), key=lambda x: -x[1])
+        )
+        blocks.append(sec(
+            f"*MISSING FIREFLIES — {missing_ff} call(s) not recorded*\n"
+            f"By rep:  {rep_summary}\n"
+            f"_Ensure Fireflies Chrome extension is active and connected._"
+        ))
+        shown_lines = []
+        for mf in missing[:4]:
+            org  = mf.get("organizer", "").split("@")[0]
+            date = (mf.get("date") or "")[:10]
+            shown_lines.append(f">  {mf['title'][:50]}   rep: {org}   {date}")
+        if missing_ff > 4:
+            shown_lines.append(f">  _... and {missing_ff - 4} more. Full list in email digest._")
+        blocks.append(sec("\n".join(shown_lines)))
+        blocks.append(div())
 
-    # ── Repeat Issues ─────────────────────────────────────────────────────────
+    # 8. REPEAT ISSUES
     repeat_issues = digest.get("repeat_issues") or []
     if repeat_issues:
-        blocks.append(section("*REPEAT ISSUES  —  Same Client, Second Week*"))
-        for r in repeat_issues:
-            blocks.append(section(
-                f"*Client:* {r['client_domain']}\n"
-                f"*Rep:* {r['rep_name']}   |   {r['note']}"
-            ))
-        blocks.append(divider())
+        lines = ["*REPEAT ISSUES — Same Client, Second Week*"]
+        for r in repeat_issues[:3]:
+            lines.append(f">  *{r['client_domain']}*   rep: {r['rep_name']}")
+        blocks.append(sec("\n".join(lines)))
+        blocks.append(div())
 
-    # ── Footer ────────────────────────────────────────────────────────────────
-    blocks.append(context(
-        f"Sent by *Zeno*  —  AMZ Prep Call QA Agent  |  "
-        f"Full report delivered to {recipient_name} via email  |  "
+    # 9. FOOTER
+    blocks.append(ctx(
+        f"Sent by *Zeno* — AMZ Prep Call QA Agent   |   "
+        f"Full report with all details sent via email   |   "
         f"Questions: <mailto:ari@amzprep.com|Ari>"
     ))
 
+    # Enforce 50-block hard cap
+    if len(blocks) > 50:
+        log.warning(f"Block count {len(blocks)} exceeds Slack limit — truncating")
+        blocks = blocks[:49]
+        blocks.append(ctx("Message truncated. Full digest available in email."))
+
+    log.info(f"Slack message built: {len(blocks)} blocks")
     return blocks
 
 
