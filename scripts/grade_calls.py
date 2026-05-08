@@ -2,10 +2,15 @@
 CS/AM Call QA Agent — Phase 2: Grade Calls
 ==========================================
 Reads Phase 1 output JSON, sends each gradeable call to Claude API
-for scoring against the rubric, and writes a graded JSON output.
+for scoring. If Claude is unavailable (low credits, 400/529 errors),
+automatically falls back to the rule-based fallback_scorer.py.
+
+Grading priority:
+  1. Claude API (claude-sonnet-4-5)  — preferred, richer coaching notes
+  2. Fallback scorer (fallback_scorer.py) — keyword-based, no API needed
 
 GitHub Actions env vars required:
-  ANTHROPIC_API_KEY  — Claude API key
+  ANTHROPIC_API_KEY  — Claude API key (optional if fallback is acceptable)
 
 Input:  output/calls_<YYYY-MM-DD>.json
 Output: output/graded_<YYYY-MM-DD>.json
@@ -25,6 +30,7 @@ from rubric import (
     score_to_grade,
     AUTO_FLAGS,
 )
+from fallback_scorer import score_call as fallback_score_call
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -35,11 +41,19 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
+# API key is optional — if missing, all calls go straight to fallback scorer
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_MODEL      = "claude-sonnet-4-5"
 MAX_TOKENS        = 1000
-RATE_LIMIT_DELAY  = 1.5   # seconds between API calls
+RATE_LIMIT_DELAY  = 1.5   # seconds between Claude API calls
+
+# Errors that trigger fallback (billing/credit issues — no point retrying)
+BILLING_ERROR_CODES = {"credit_balance_too_low", "insufficient_quota"}
+BILLING_HTTP_CODES  = {400, 402, 429}
+
+# Track if Claude billing failed this run — once confirmed down, skip all remaining Claude calls
+_claude_billing_failed = False
 
 # Always resolve output/ relative to repo root (one level up from scripts/)
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
@@ -47,37 +61,62 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 
 # ─── Claude API call ──────────────────────────────────────────────────────────
-def grade_call_with_claude(call: dict) -> dict | None:
+def grade_call_with_claude(call: dict) -> tuple[dict | None, bool]:
     """
     Sends a single call to Claude for grading.
-    Returns parsed JSON score dict, or None if grading failed.
+    Returns: (result_dict | None, billing_failed: bool)
+      - result_dict: parsed JSON on success
+      - None: on any failure
+      - billing_failed=True: signals caller to switch to fallback for all remaining calls
     """
+    global _claude_billing_failed
+
+    if not ANTHROPIC_API_KEY:
+        return None, False   # no key configured — let caller use fallback
+
     prompt = build_grading_prompt(call)
 
-    resp = requests.post(
-        ANTHROPIC_API_URL,
-        headers={
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-        },
-        json={
-            "model": CLAUDE_MODEL,
-            "max_tokens": MAX_TOKENS,
-            "system": GRADING_SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=30,
-    )
+    try:
+        resp = requests.post(
+            ANTHROPIC_API_URL,
+            headers={
+                "x-api-key": ANTHROPIC_API_KEY,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": CLAUDE_MODEL,
+                "max_tokens": MAX_TOKENS,
+                "system": GRADING_SYSTEM_PROMPT,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        log.error(f"Claude API request failed: {e}")
+        return None, False
 
     if not resp.ok:
-        log.error(f"Claude API error {resp.status_code}: {resp.text[:300]}")
-        return None
+        body = resp.text[:400]
+        log.error(f"Claude API error {resp.status_code}: {body}")
+
+        # Detect billing/credit errors — flag so we stop calling Claude
+        is_billing_error = (
+            resp.status_code in BILLING_HTTP_CODES and
+            any(code in body for code in BILLING_ERROR_CODES)
+        ) or "credit balance is too low" in body or "insufficient" in body.lower()
+
+        if is_billing_error:
+            log.warning("Claude billing/credit error detected — switching ALL remaining calls to fallback scorer")
+            _claude_billing_failed = True
+            return None, True   # signal billing failure
+
+        return None, False
 
     data = resp.json()
     raw_text = data["content"][0]["text"].strip()
 
-    # Strip markdown fences if Claude wrapped in ```json
+    # Strip markdown fences if Claude wrapped response in ```json
     if raw_text.startswith("```"):
         raw_text = raw_text.split("```")[1]
         if raw_text.startswith("json"):
@@ -86,12 +125,12 @@ def grade_call_with_claude(call: dict) -> dict | None:
 
     try:
         result = json.loads(raw_text)
+        result["graded_by"] = "claude"
+        return result, False
     except json.JSONDecodeError as e:
         log.error(f"Failed to parse Claude response as JSON: {e}")
         log.error(f"Raw response: {raw_text[:300]}")
-        return None
-
-    return result
+        return None, False
 
 
 # ─── Validate and normalise the graded result ─────────────────────────────────
@@ -169,12 +208,19 @@ def save_progress(graded_calls: list, phase1_data: dict, run_date: str):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 def main():
+    global _claude_billing_failed
+
     log.info("=== CS/AM Call QA Agent — Phase 2: Grade Calls ===")
+
+    if not ANTHROPIC_API_KEY:
+        log.warning("ANTHROPIC_API_KEY not set — all calls will use fallback scorer")
+        _claude_billing_failed = True
+    else:
+        log.info("Claude API configured — will fall back to rule-based scorer if billing fails")
 
     phase1_data, _ = load_latest_calls()
     run_date = phase1_data["run_date"]
 
-    # Load existing graded calls for resume support
     existing = load_existing_graded(run_date)
     already_graded = {c["id"]: c for c in existing.get("calls", [])} if existing else {}
 
@@ -182,8 +228,8 @@ def main():
     gradeable = [c for c in calls if c["call_type"] in ("CS_AM", "OPS")]
     log.info(f"Total calls: {len(calls)} | Gradeable: {len(gradeable)}")
 
-    graded_calls  = []
-    success = failed = skipped_count = resumed = 0
+    graded_calls = []
+    claude_success = claude_failed = fallback_used = skipped_count = resumed = 0
 
     for i, call in enumerate(calls):
         # Non-gradeable calls pass through unchanged
@@ -192,43 +238,82 @@ def main():
             skipped_count += 1
             continue
 
-        # Resume: if already graded in a previous run, skip re-grading
+        # Resume: already graded in a previous run
         if call["id"] in already_graded:
             graded_calls.append(already_graded[call["id"]])
             resumed += 1
-            log.info(f"  [{i+1}/{len(calls)}] RESUMED  [{call['call_type']}] {call['title'][:55]}")
+            log.info(f"  [{i+1}/{len(calls)}] RESUMED   [{call['call_type']}] {call['title'][:50]}")
             continue
 
-        log.info(f"  [{i+1}/{len(calls)}] Grading  [{call['call_type']}] {call['title'][:55]}")
+        label = call['call_type']
+        title = call['title'][:50]
 
-        result = grade_call_with_claude(call)
+        # ── Try Claude first (unless billing already failed this run) ──────────
+        result = None
+        used_fallback = False
 
+        if not _claude_billing_failed:
+            log.info(f"  [{i+1}/{len(calls)}] Claude    [{label}] {title}")
+            result, billing_failed = grade_call_with_claude(call)
+
+            if billing_failed:
+                # Billing confirmed down — immediately fall back for this call too
+                log.warning(f"  [{i+1}/{len(calls)}] Fallback  [{label}] {title} (billing error)")
+                result = fallback_score_call(call)
+                used_fallback = True
+                fallback_used += 1
+            elif result is None:
+                # Non-billing failure (timeout, parse error) — use fallback for this call only
+                log.warning(f"  [{i+1}/{len(calls)}] Fallback  [{label}] {title} (Claude failed, non-billing)")
+                result = fallback_score_call(call)
+                used_fallback = True
+                fallback_used += 1
+            else:
+                claude_success += 1
+
+        else:
+            # Billing already known to be down — go straight to fallback
+            log.info(f"  [{i+1}/{len(calls)}] Fallback  [{label}] {title}")
+            result = fallback_score_call(call)
+            used_fallback = True
+            fallback_used += 1
+
+        # ── Validate and merge result ──────────────────────────────────────────
         if result:
             validated   = validate_grade(result, call)
-            graded_call = {**call, **validated}
+            graded_call = {**call, **validated, "graded_by": result.get("graded_by", "unknown")}
             graded_calls.append(graded_call)
-            success += 1
+            source = "fallback" if used_fallback else "claude"
             log.info(
-                f"    → Score: {validated['score_total']}/100  "
+                f"    [{source}] Score: {validated['score_total']}/100  "
                 f"Grade: {validated['grade']}  "
                 f"Flags: {validated['auto_flags'] or 'none'}"
             )
         else:
+            # Should never reach here — fallback always returns a result
             graded_calls.append(call)
-            failed += 1
-            log.warning(f"    → Grading FAILED for call {call['id']}")
+            claude_failed += 1
+            log.error(f"    Both Claude and fallback failed for call {call['id']}")
 
-        # Save after every call so we can resume on interruption
         save_progress(graded_calls, phase1_data, run_date)
-        time.sleep(RATE_LIMIT_DELAY)
 
-    log.info(f"Grading complete — Graded: {success} | Resumed: {resumed} | Failed: {failed} | Skipped: {skipped_count}")
+        # Only delay if we actually called Claude
+        if not used_fallback:
+            time.sleep(RATE_LIMIT_DELAY)
+
+    log.info(
+        f"Grading complete — "
+        f"Claude: {claude_success} | Fallback: {fallback_used} | "
+        f"Resumed: {resumed} | Failed: {claude_failed} | Skipped: {skipped_count}"
+    )
     save_progress(graded_calls, phase1_data, run_date)
     log.info(f"Output written → output/graded_{run_date}.json")
     log.info("=== Phase 2 complete ===")
 
-    if failed > 0:
-        log.warning(f"{failed} calls failed grading — check logs above")
+    if claude_failed > 0:
+        log.error(f"{claude_failed} calls could not be graded by either method")
+    if fallback_used > 0 and not _claude_billing_failed:
+        log.warning(f"{fallback_used} calls used fallback scorer — check Claude API health")
 
 
 if __name__ == "__main__":
