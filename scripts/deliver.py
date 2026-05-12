@@ -36,13 +36,13 @@ OUTPUT_DIR      = Path(__file__).parent.parent / "output"
 TEMPLATES_DIR   = Path(__file__).parent / "templates"
 
 # Email recipients
-LAKSHITA_EMAIL  = "harishnath@amzprep.com"
-THOMAS_EMAIL    = "jerun@amzprep.com"
+LAKSHITA_EMAIL  = "lakshita@amzprep.com"
+THOMAS_EMAIL    = "thomas@amzprep.com"
 ARI_EMAIL       = "ari@amzprep.com"
 CC_EMAILS       = [
     "ari@amzprep.com",
     "harishnath@amzprep.com",
-    "jerun@amzprep.com",
+    "blair@amzprep.com",
 ]
 
 FROM_EMAIL      = "reports@amzprep.com"

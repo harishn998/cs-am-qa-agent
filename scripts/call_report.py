@@ -47,11 +47,13 @@ FROM_EMAIL     = "reports@amzprep.com"
 FROM_NAME      = "Zeno · AMZ Prep"
 
 TO_RECIPIENTS  = [
-    ("Thomas Gewarges", "harishnath@amzprep.com"),
+    ("Lakshita Dang",   "lakshita@amzprep.com"),
+    ("Thomas Gewarges", "thomas@amzprep.com"),
 ]
 CC_RECIPIENTS  = [
     "ari@amzprep.com",
     "harishnath@amzprep.com",
+    "blair@amzprep.com",
 ]
 
 OUTPUT_DIR = Path(__file__).parent.parent / "output"
