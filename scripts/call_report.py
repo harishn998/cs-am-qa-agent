@@ -378,47 +378,60 @@ def build_email_html(
 
     # ── CSS ───────────────────────────────────────────────────────────────────
     css = """
-    body{margin:0;padding:0;background:#f0f2f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;color:#1a202c;}
-    .wrap{max-width:720px;margin:0 auto;padding:24px 16px;}
-    .hdr{background:linear-gradient(135deg,#1E3A5F,#2B6CB0);border-radius:10px 10px 0 0;padding:28px 32px;}
-    .hdr-title{color:#fff;font-size:22px;font-weight:800;letter-spacing:.5px;}
-    .hdr-sub{color:#90CDF4;font-size:13px;margin-top:4px;}
-    .hdr-week{color:#BEE3F8;font-size:13px;margin-top:12px;}
-    .card{background:#fff;border-radius:0;border-left:1px solid #E2E8F0;border-right:1px solid #E2E8F0;padding:24px 32px;}
-    .card-last{border-radius:0 0 10px 10px;border-bottom:1px solid #E2E8F0;}
-    .sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#2B6CB0;margin:0 0 14px 0;padding-bottom:8px;border-bottom:2px solid #EBF4FF;}
-    .stat-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
-    .stat{flex:1;min-width:120px;background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:14px 16px;text-align:center;}
-    .stat .val{font-size:28px;font-weight:800;color:#1E3A5F;}
-    .stat .lbl{font-size:11px;color:#718096;margin-top:3px;text-transform:uppercase;letter-spacing:.5px;}
-    .csm-table{width:100%;border-collapse:collapse;font-size:13px;}
-    .csm-table th{background:#EBF4FF;color:#2C5282;font-weight:700;text-align:left;padding:8px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;}
-    .csm-table td{padding:9px 12px;border-bottom:1px solid #F7FAFC;vertical-align:middle;}
-    .csm-table tr:last-child td{border-bottom:none;}
-    .bar{height:8px;background:#EBF4FF;border-radius:4px;overflow:hidden;margin-top:6px;}
-    .bar-fill{height:100%;border-radius:4px;background:#3182CE;}
-    .call-card{border-radius:8px;padding:18px 20px;margin-bottom:14px;border-left:4px solid #ccc;}
-    .call-card h3{margin:0 0 6px 0;font-size:14px;font-weight:700;color:#1A202C;}
-    .call-meta{font-size:12px;color:#718096;margin-bottom:10px;}
-    .rag-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;margin-bottom:10px;}
-    .rag-reason{font-size:12px;font-style:italic;margin-bottom:10px;}
-    .bullet-list{margin:0 0 10px 0;padding:0;list-style:none;}
-    .bullet-list li{font-size:13px;color:#2D3748;padding:4px 0 4px 14px;position:relative;line-height:1.5;}
-    .bullet-list li:before{content:"–";position:absolute;left:0;color:#718096;}
-    .action-block{background:#F7FAFC;border-radius:6px;padding:10px 14px;margin-top:10px;}
-    .action-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#4A5568;margin-bottom:6px;}
-    .action-item{font-size:12px;color:#2D3748;padding:3px 0;border-bottom:1px solid #EDF2F7;}
-    .action-item:last-child{border-bottom:none;}
-    .action-owner{font-weight:700;color:#2B6CB0;}
-    .ff-link{font-size:12px;color:#3182CE;text-decoration:none;font-weight:600;}
-    .ff-row{font-size:12px;padding:6px 0;border-bottom:1px solid #F7FAFC;color:#4A5568;}
-    .ff-row:last-child{border-bottom:none;}
-    .no-summary{background:#FFF5F5;border:1px dashed #FC8181;border-radius:6px;padding:10px 14px;font-size:12px;color:#C53030;margin-bottom:8px;}
-    .divider{height:1px;background:#E2E8F0;margin:20px 0;}
-    .footer{text-align:center;padding:16px;font-size:11px;color:#A0AEC0;}
-    .type-badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:10px;margin-left:6px;}
-    .type-cs{background:#EBF4FF;color:#2B6CB0;}
-    .type-ops{background:#FAF5FF;color:#6B46C1;}
+    body { margin:0; padding:0; background:#f0f2f5; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#1a202c; }
+    .wrap { max-width:700px; margin:0 auto; padding:28px 16px; }
+
+    /* Header */
+    .hdr { background:linear-gradient(135deg,#1E3A5F,#2B6CB0); border-radius:12px 12px 0 0; padding:32px 36px; }
+    .hdr-title { color:#fff; font-size:22px; font-weight:800; letter-spacing:.5px; line-height:1.3; }
+    .hdr-sub { color:#90CDF4; font-size:13px; margin-top:6px; }
+    .hdr-week { color:#BEE3F8; font-size:13px; margin-top:14px; font-weight:500; }
+
+    /* Cards */
+    .card { background:#fff; border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0; padding:28px 36px; }
+    .card + .card { border-top:1px solid #EDF2F7; }
+    .card-last { border-radius:0 0 12px 12px; border-bottom:1px solid #E2E8F0; }
+    .sec-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#2B6CB0; margin:0 0 20px 0; padding-bottom:10px; border-bottom:2px solid #EBF4FF; }
+
+    /* Stat grid */
+    .stat-row { display:flex; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+    .stat { flex:1; min-width:130px; background:#F7FAFC; border:1px solid #E2E8F0; border-radius:10px; padding:18px 16px 16px; text-align:center; }
+    .stat .val { font-size:30px; font-weight:800; color:#1E3A5F; line-height:1.1; }
+    .stat .lbl { font-size:11px; color:#718096; margin-top:6px; text-transform:uppercase; letter-spacing:.6px; line-height:1.4; }
+
+    /* CSM table */
+    .csm-table { width:100%; border-collapse:collapse; font-size:13px; margin-top:4px; }
+    .csm-table th { background:#EBF4FF; color:#2C5282; font-weight:700; text-align:left; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:.6px; }
+    .csm-table th:last-child { width:200px; }
+    .csm-table td { padding:11px 14px; border-bottom:1px solid #F0F4F8; vertical-align:middle; line-height:1.4; }
+    .csm-table tr:last-child td { border-bottom:none; }
+    .bar { height:8px; background:#EBF4FF; border-radius:4px; overflow:hidden; margin-top:5px; }
+    .bar-fill { height:100%; border-radius:4px; background:#3182CE; }
+
+    /* Call cards */
+    .call-card { border-radius:8px; padding:20px 22px; margin-bottom:16px; border-left:4px solid #ccc; }
+    .call-card:last-child { margin-bottom:0; }
+    .call-card h3 { margin:0 0 8px 0; font-size:15px; font-weight:700; color:#1A202C; line-height:1.4; }
+    .call-meta { font-size:12px; color:#718096; margin-bottom:12px; line-height:1.6; }
+    .rag-badge { display:inline-block; padding:4px 12px; border-radius:12px; font-size:11px; font-weight:700; margin-bottom:4px; letter-spacing:.5px; }
+    .rag-reason { display:block; font-size:12px; font-style:italic; margin:4px 0 14px 0; line-height:1.5; }
+    .bullet-list { margin:0 0 14px 0; padding:0; list-style:none; }
+    .bullet-list li { font-size:13px; color:#2D3748; padding:5px 0 5px 16px; position:relative; line-height:1.6; border-bottom:1px solid #F7FAFC; }
+    .bullet-list li:last-child { border-bottom:none; }
+    .bullet-list li:before { content:"–"; position:absolute; left:0; color:#A0AEC0; }
+    .action-block { background:#F7FAFC; border-radius:8px; padding:14px 16px; margin-top:14px; }
+    .action-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.8px; color:#4A5568; margin-bottom:10px; }
+    .action-item { font-size:12px; color:#2D3748; padding:6px 0; border-bottom:1px solid #EDF2F7; line-height:1.5; }
+    .action-item:last-child { border-bottom:none; padding-bottom:0; }
+    .action-owner { font-weight:700; color:#2B6CB0; }
+    .ff-link { font-size:12px; color:#3182CE; text-decoration:none; font-weight:600; display:inline-block; margin-top:12px; }
+    .ff-row { font-size:12px; padding:8px 0; border-bottom:1px solid #F7FAFC; color:#4A5568; line-height:1.5; }
+    .ff-row:last-child { border-bottom:none; }
+    .no-summary { background:#FFF5F5; border:1px dashed #FC8181; border-radius:6px; padding:12px 14px; font-size:12px; color:#C53030; margin-bottom:12px; line-height:1.5; }
+    .type-badge { font-size:10px; font-weight:700; padding:3px 8px; border-radius:10px; margin-left:8px; vertical-align:middle; }
+    .type-cs { background:#EBF4FF; color:#2B6CB0; }
+    .type-ops { background:#FAF5FF; color:#6B46C1; }
+    .footer { text-align:center; padding:20px 16px; font-size:11px; color:#A0AEC0; line-height:1.7; }
     """
 
     # ── Header ────────────────────────────────────────────────────────────────
