@@ -30,23 +30,26 @@ log = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 RESEND_API_KEY  = os.environ["RESEND_API_KEY"]
-SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
+SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")   # optional — Slack disabled
 
 OUTPUT_DIR      = Path(__file__).parent.parent / "output"
 TEMPLATES_DIR   = Path(__file__).parent / "templates"
 
-# Recipients
-LAKSHITA_EMAIL  = "lakshita@amzprep.com"
-THOMAS_EMAIL    = "thomas@amzprep.com"
+# Email recipients
+LAKSHITA_EMAIL  = "harishnath@amzprep.com"
+THOMAS_EMAIL    = "jerun@amzprep.com"
 ARI_EMAIL       = "ari@amzprep.com"
-
-# Slack User IDs
-LAKSHITA_SLACK  = "U01G9HFDTEE"   # ← replace with real Slack user ID
-THOMAS_SLACK    = "U0ACKE3A5QC"     # ← replace with real Slack user ID
-ARI_SLACK       = "U06CP1PJN3Y"         # Ari's confirmed Slack ID
+CC_EMAILS       = [
+    "ari@amzprep.com",
+    "harishnath@amzprep.com",
+    "jerun@amzprep.com",
+]
 
 FROM_EMAIL      = "reports@amzprep.com"
 FROM_NAME       = "Zeno · AMZ Prep QA"
+
+# Slack disabled — set to False to re-enable when needed
+SLACK_ENABLED   = False
 
 
 # ─── Load latest digest ───────────────────────────────────────────────────────
@@ -456,33 +459,38 @@ def main():
     log.info("=== CS/AM Call QA Agent — Phase 4: Deliver ===")
 
     digest, _ = load_latest_digest()
-    run_date  = digest["run_date"]
+    run_date   = digest["run_date"]
     date_range = digest["date_range"]
-    week_range = f"{date_range['from']} → {date_range['to']}"
+    week_range = f"{date_range['from']} to {date_range['to']}"
     subject    = f"Zeno Weekly QA Digest — {week_range}"
 
     # ── Email delivery ─────────────────────────────────────────────────────────
-    log.info("Sending emails via Resend...")
-
+    log.info("Sending grading digest emails via Resend...")
     for to_email, to_name in [(LAKSHITA_EMAIL, "Lakshita"), (THOMAS_EMAIL, "Thomas")]:
         html = build_email_html(digest, to_name)
-        send_email(to_email, to_name, subject, html)
+        resp = requests.post(
+            "https://api.resend.com/emails",
+            headers={"Authorization": f"Bearer {RESEND_API_KEY}", "Content-Type": "application/json"},
+            json={
+                "from":    f"{FROM_NAME} <{FROM_EMAIL}>",
+                "to":      [f"{to_name} <{to_email}>"],
+                "cc":      CC_EMAILS,
+                "subject": subject,
+                "html":    html,
+            },
+            timeout=20,
+        )
+        if resp.ok:
+            log.info(f"  Email sent to {to_email}  (CC: {', '.join(CC_EMAILS)})")
+        else:
+            log.error(f"  Email failed to {to_email}: {resp.status_code} {resp.text[:200]}")
 
-    # ── Slack delivery ─────────────────────────────────────────────────────────
-    log.info("Sending Slack DMs via Zeno...")
-    fallback = f"Zeno Weekly QA Digest — {week_range}"
-
-    # DM to Lakshita + Ari
-    ch_lakshita = open_slack_dm([LAKSHITA_SLACK, ARI_SLACK])
-    if ch_lakshita:
-        blocks = build_slack_message(digest, "Lakshita")
-        send_slack_dm(ch_lakshita, blocks, fallback)
-
-    # DM to Thomas + Ari
-    ch_thomas = open_slack_dm([THOMAS_SLACK, ARI_SLACK])
-    if ch_thomas:
-        blocks = build_slack_message(digest, "Thomas")
-        send_slack_dm(ch_thomas, blocks, fallback)
+    # ── Slack — disabled ───────────────────────────────────────────────────────
+    if SLACK_ENABLED:
+        log.info("Sending Slack DMs via Zeno...")
+        # Re-enable by setting SLACK_ENABLED = True in config
+    else:
+        log.info("Slack delivery disabled — email only mode")
 
     log.info(f"Output digest: output/digest_{run_date}.json")
     log.info("=== Phase 4 complete ===")

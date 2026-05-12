@@ -54,6 +54,15 @@ jobs:
           print(f'   CS/AM: {s[\"classification_counts\"][\"CS_AM\"]} | OPS: {s[\"classification_counts\"][\"OPS\"]} | Internal: {s[\"classification_counts\"][\"INTERNAL\"]} | Skip: {s[\"classification_counts\"][\"SKIP\"]}')
           "
 
+      # ── Call Visibility Report ───────────────────────────────────────────────
+      - name: "Call Visibility Report — COO Briefing Email"
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          echo "::group::Call Visibility Report"
+          python scripts/call_report.py
+          echo "::endgroup::"
+
       # ── Phase 2: Grade Calls ─────────────────────────────────────────────────
       - name: "Phase 2 — Grade Calls with Claude (Zeno)"
         env:
@@ -99,11 +108,10 @@ jobs:
           "
 
       # ── Phase 4: Deliver ─────────────────────────────────────────────────────
-      - name: "Phase 4 — Deliver via Zeno (Email + Slack)"
+      - name: "Phase 4 — Deliver via Zeno (Email)"
         if: ${{ github.event.inputs.skip_delivery != 'true' }}
         env:
-          RESEND_API_KEY:   ${{ secrets.RESEND_API_KEY }}
-          SLACK_BOT_TOKEN:  ${{ secrets.SLACK_BOT_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
         run: |
           echo "::group::Phase 4 — Deliver"
           python scripts/deliver.py
