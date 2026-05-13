@@ -1,19 +1,16 @@
 """
 Zeno — Weekly Call Visibility Report
 =====================================
-Generates a clean weekly call report for Thomas and Lakshita.
-No grading. Focus on visibility: what happened, who was on the call,
-what was discussed, what's next — split into Client Calls and Internal Calls.
+Gmail-safe email. All layout via HTML tables and inline styles.
+No flexbox, no grid, no pseudo-elements, no complex CSS selectors.
+Target output size: under 90KB (Gmail clips at ~102KB).
 
-Sections:
-  1. Week at a Glance (high-level counts)
-  2. CSM Call Breakdown (who handled how many client calls)
-  3. Client Calls — full summaries, RAG status, action items
-  4. Internal Calls — brief summaries
-  5. Fireflies Coverage
-
-Input:  output/calls_<YYYY-MM-DD>.json
-Output: email via Resend + output/call_report_<YYYY-MM-DD>.html
+Caps enforced:
+  - Client calls with full summary: max 30
+  - Internal calls with full summary: max 15
+  - Action items per call: max 5
+  - Bullet points per call: max 4
+  - Missing FF list: max 20
 """
 
 import os, json, logging, requests, re
@@ -56,46 +53,41 @@ TEAM_NAMES = {
     "roshni@amzprep.com":    "Roshni Nair",
 }
 
-# ─── RAG keywords ─────────────────────────────────────────────────────────────
+MAX_CLIENT_FULL   = 15   # full summary cards
+MAX_INTERNAL_FULL = 10   # full summary cards
+MAX_BULLETS       = 3
+MAX_ACTIONS       = 4
+MAX_MISSING_FF    = 15
+
 RED_KEYWORDS = [
-    "cancel", "canceling", "cancelling", "leaving", "switching",
-    "frustrated", "frustration", "extremely disappointed", "very unhappy",
-    "unacceptable", "legal", "escalate to management", "very upset",
-    "not happy", "terminate", "chargeback", "lawsuit", "angry",
-    "outraged", "shipbob", "deliverr", "stord", "going with another",
-    "this is unacceptable", "serious issue", "critical issue",
+    "cancel","canceling","cancelling","leaving","switching","frustrated",
+    "frustration","extremely disappointed","very unhappy","unacceptable",
+    "legal","very upset","not happy","terminate","chargeback","lawsuit",
+    "angry","outraged","shipbob","deliverr","stord","going with another",
+    "serious issue","critical issue",
 ]
 YELLOW_KEYWORDS = [
-    "concern", "issue", "problem", "delay", "late", "missed sla",
-    "not resolved", "still waiting", "unclear", "confused", "pushback",
-    "pricing concern", "too expensive", "no next step", "unresolved",
-    "need to follow up", "needs clarification", "investigate",
-    "error", "mislabeled", "damaged", "lost shipment", "wrong sku",
-    "placement fee", "chargeback risk", "not sure", "pending",
+    "concern","issue","problem","delay","late","missed sla","not resolved",
+    "still waiting","unclear","confused","pushback","pricing concern",
+    "too expensive","no next step","unresolved","needs clarification",
+    "investigate","error","mislabeled","damaged","lost shipment","wrong sku",
+    "placement fee","pending",
 ]
 GREEN_KEYWORDS = [
-    "resolved", "great call", "happy", "satisfied", "confirmed",
-    "booked", "scheduled next", "positive", "going well", "on track",
-    "no issues", "good relationship", "expanding", "growing",
-    "new sku", "new channel", "excellent", "smooth", "working well",
-    "thank", "appreciate", "pleased",
-]
-
-FIREFLIES_MISSING_REASONS = [
-    "Chrome extension may not be installed or active on the rep's browser",
-    "Call was not created via Google Calendar — Fireflies needs a calendar event to auto-join",
-    "Call duration was too short for Fireflies to process a transcript",
-    "Fireflies bot was manually removed from the call",
+    "resolved","great call","happy","satisfied","confirmed","booked",
+    "scheduled next","positive","going well","on track","no issues",
+    "good relationship","expanding","growing","excellent","smooth",
+    "working well","appreciate","pleased",
 ]
 
 RAG_COLORS = {
-    "RED":    {"bg": "#FFF5F5", "border": "#E53E3E", "text": "#C53030", "pill_bg": "#FED7D7"},
-    "YELLOW": {"bg": "#FFFBEB", "border": "#D69E2E", "text": "#92600A", "pill_bg": "#FEFCBF"},
-    "GREEN":  {"bg": "#F0FFF4", "border": "#38A169", "text": "#22543D", "pill_bg": "#C6F6D5"},
+    "RED":    {"bg":"#FFF5F5","border":"#E53E3E","text":"#C53030","pill_bg":"#FED7D7"},
+    "YELLOW": {"bg":"#FFFBEB","border":"#D69E2E","text":"#92600A","pill_bg":"#FEFCBF"},
+    "GREEN":  {"bg":"#F0FFF4","border":"#38A169","text":"#22543D","pill_bg":"#C6F6D5"},
 }
 
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
+# ─── Data helpers ─────────────────────────────────────────────────────────────
 def load_latest_calls() -> dict:
     files = sorted(OUTPUT_DIR.glob("calls_*.json"))
     if not files:
@@ -112,545 +104,345 @@ def detect_rag(call: dict) -> str:
         call.get("title") or "",
     ]).lower()
     for kw in RED_KEYWORDS:
-        if kw in text:
-            return "RED"
+        if kw in text: return "RED"
     for kw in YELLOW_KEYWORDS:
-        if kw in text:
-            return "YELLOW"
-    if any(kw in text for kw in GREEN_KEYWORDS):
-        return "GREEN"
+        if kw in text: return "YELLOW"
+    if any(kw in text for kw in GREEN_KEYWORDS): return "GREEN"
     return "YELLOW"
 
 
 def rag_label(rag: str) -> str:
-    return {
-        "RED":    "Needs Attention",
-        "YELLOW": "Monitor Closely",
-        "GREEN":  "On Track",
-    }.get(rag, "Monitor Closely")
+    return {"RED":"Needs Attention","YELLOW":"Monitor Closely","GREEN":"On Track"}.get(rag,"Monitor Closely")
 
 
-def get_rep_names(call: dict) -> list[str]:
+def get_rep_names(call: dict) -> list:
     return [TEAM_NAMES.get(e, e.split("@")[0].title())
             for e in (call.get("team_members_on_call") or [])]
 
 
 def get_client_label(call: dict) -> str:
     title = call.get("title") or ""
-    for sep in [" - ", " – ", ": ", " / ", " | "]:
+    for sep in [" - "," - "," – ",": "," / "," | "]:
         if sep in title:
             for part in title.split(sep):
-                part = part.strip()
-                if part and "amz" not in part.lower() and len(part) > 2:
-                    return part
-    return title[:60] if title else "Unknown"
+                p = part.strip()
+                if p and "amz" not in p.lower() and len(p) > 2:
+                    return p[:60]
+    return title[:60] or "Unknown"
 
 
-def extract_bullets(call: dict) -> list[str]:
+def extract_bullets(call: dict) -> list:
     summary = (call.get("short_summary") or "").strip()
-    if not summary:
-        return []
+    if not summary: return []
     sentences = re.split(r'(?<=[.!?])\s+', summary)
     bullets = []
     for s in sentences:
         s = s.strip().rstrip(".")
         if len(s) > 25:
-            bullets.append(s[:200] + "..." if len(s) > 200 else s)
-        if len(bullets) == 5:
-            break
+            bullets.append((s[:180] + "...") if len(s) > 180 else s)
+        if len(bullets) == MAX_BULLETS: break
     if not bullets and call.get("keywords"):
-        bullets.append(f"Topics covered: {', '.join((call.get('keywords') or [])[:6])}")
+        bullets.append("Topics: " + ", ".join((call.get("keywords") or [])[:5]))
     return bullets
 
 
-def extract_action_items(call: dict) -> list[dict]:
+def extract_action_items(call: dict) -> list:
     raw = (call.get("action_items") or "").strip()
-    if not raw:
-        return []
-    items = []
-    current_owner = "Team"
+    if not raw: return []
+    items, owner = [], "Team"
     for line in raw.split("\n"):
         line = line.strip()
-        if not line:
-            continue
+        if not line: continue
         if line.startswith("**") and line.endswith("**"):
-            current_owner = line.strip("*").strip()
-            continue
-        if line.startswith(("-", "•")):
+            owner = line.strip("*").strip(); continue
+        if line.startswith(("-","•")):
             action = re.sub(r'\s*\(\d+:\d+\)\s*$', '', line.lstrip("-•").strip())
             if action and len(action) > 5:
-                items.append({"owner": current_owner, "action": action})
-    return items[:8]
+                items.append({"owner": owner, "action": action[:120]})
+    return items[:MAX_ACTIONS]
 
 
-# ─── Data builders ────────────────────────────────────────────────────────────
-def build_snapshot(calls: list[dict]) -> dict:
-    client_calls   = [c for c in calls if c["call_type"] in ("CS_AM", "OPS")]
-    internal_calls = [c for c in calls if c["call_type"] == "INTERNAL"]
-    cs_am          = [c for c in calls if c["call_type"] == "CS_AM"]
-    ops            = [c for c in calls if c["call_type"] == "OPS"]
-
-    csm_counts = defaultdict(int)
-    for call in client_calls:
-        for email in (call.get("team_members_on_call") or []):
-            if email in TEAM_NAMES:
-                csm_counts[email] += 1
-
-    rag_counts = {"RED": 0, "YELLOW": 0, "GREEN": 0}
-    for call in client_calls:
-        rag_counts[detect_rag(call)] += 1
-
+def build_snapshot(calls: list) -> dict:
+    client  = [c for c in calls if c["call_type"] in ("CS_AM","OPS")]
+    intern_ = [c for c in calls if c["call_type"] == "INTERNAL"]
+    csm     = defaultdict(int)
+    for c in client:
+        for e in (c.get("team_members_on_call") or []):
+            if e in TEAM_NAMES: csm[e] += 1
+    rag = {"RED":0,"YELLOW":0,"GREEN":0}
+    for c in client: rag[detect_rag(c)] += 1
     return {
-        "total_client":   len(client_calls),
-        "total_cs_am":    len(cs_am),
-        "total_ops":      len(ops),
-        "total_internal": len(internal_calls),
+        "total_client":   len(client),
+        "total_cs_am":    len([c for c in client if c["call_type"]=="CS_AM"]),
+        "total_ops":      len([c for c in client if c["call_type"]=="OPS"]),
+        "total_internal": len(intern_),
         "total_all":      len(calls),
-        "csm_counts":     dict(csm_counts),
-        "rag_counts":     rag_counts,
+        "csm_counts":     dict(csm),
+        "rag_counts":     rag,
     }
 
 
-def build_client_reports(calls: list[dict]) -> list[dict]:
-    external = sorted(
-        [c for c in calls if c["call_type"] in ("CS_AM", "OPS")],
-        key=lambda c: c.get("date") or "",
-        reverse=True,
+def build_client_reports(calls: list) -> list:
+    ext = sorted(
+        [c for c in calls if c["call_type"] in ("CS_AM","OPS")],
+        key=lambda c: c.get("date") or "", reverse=True
     )
-    reports = []
-    for call in external:
-        rag = detect_rag(call)
-        reports.append({
-            "id":           call["id"],
-            "title":        call.get("title") or "Untitled",
-            "client":       get_client_label(call),
-            "call_type":    call["call_type"],
-            "date":         (call.get("date") or "")[:10],
-            "duration":     f"{int(call.get('duration_minutes') or 0)} min",
-            "reps":         get_rep_names(call),
-            "rag":          rag,
-            "rag_label":    rag_label(rag),
-            "bullets":      extract_bullets(call),
-            "action_items": extract_action_items(call),
-            "has_summary":  bool(call.get("short_summary")),
-            "ff_joined":    call.get("fireflies_joined", False),
-            "fireflies_url": f"https://app.fireflies.ai/view/{call['id']}",
-        })
-    return reports
+    return [{
+        "id":           c["id"],
+        "title":        c.get("title") or "Untitled",
+        "call_type":    c["call_type"],
+        "date":         (c.get("date") or "")[:10],
+        "duration":     f"{int(c.get('duration_minutes') or 0)} min",
+        "reps":         get_rep_names(c),
+        "rag":          detect_rag(c),
+        "bullets":      extract_bullets(c),
+        "action_items": extract_action_items(c),
+        "has_summary":  bool(c.get("short_summary")),
+        "fireflies_url": f"https://app.fireflies.ai/view/{c['id']}",
+    } for c in ext]
 
 
-def build_internal_reports(calls: list[dict]) -> list[dict]:
-    internal = sorted(
+def build_internal_reports(calls: list) -> list:
+    intern_ = sorted(
         [c for c in calls if c["call_type"] == "INTERNAL"],
-        key=lambda c: c.get("date") or "",
-        reverse=True,
+        key=lambda c: c.get("date") or "", reverse=True
     )
-    reports = []
-    for call in internal:
-        reports.append({
-            "title":        call.get("title") or "Untitled",
-            "date":         (call.get("date") or "")[:10],
-            "duration":     f"{int(call.get('duration_minutes') or 0)} min",
-            "reps":         get_rep_names(call),
-            "bullets":      extract_bullets(call),
-            "action_items": extract_action_items(call),
-            "has_summary":  bool(call.get("short_summary")),
-            "ff_joined":    call.get("fireflies_joined", False),
-            "fireflies_url": f"https://app.fireflies.ai/view/{call['id']}",
-        })
-    return reports
+    return [{
+        "title":        c.get("title") or "Untitled",
+        "date":         (c.get("date") or "")[:10],
+        "duration":     f"{int(c.get('duration_minutes') or 0)} min",
+        "reps":         get_rep_names(c),
+        "bullets":      extract_bullets(c),
+        "action_items": extract_action_items(c),
+        "has_summary":  bool(c.get("short_summary")),
+        "fireflies_url": f"https://app.fireflies.ai/view/{c['id']}",
+    } for c in intern_]
 
 
-def build_missing_ff(calls: list[dict]) -> list[dict]:
+def build_missing_ff(calls: list) -> list:
     return [
         {
-            "title":    call.get("title") or "Untitled",
-            "date":     (call.get("date") or "")[:10],
-            "reps":     get_rep_names(call),
-            "type":     call["call_type"],
+            "title":  c.get("title") or "Untitled",
+            "date":   (c.get("date") or "")[:10],
+            "reps":   get_rep_names(c),
+            "type":   c["call_type"],
         }
-        for call in calls
-        if not call.get("fireflies_joined") and call["call_type"] != "SKIP"
+        for c in calls
+        if not c.get("fireflies_joined") and c["call_type"] != "SKIP"
     ]
 
 
-# ─── HTML builder ─────────────────────────────────────────────────────────────
+# ─── Gmail-safe HTML primitives ───────────────────────────────────────────────
+def _td(content, style=""):
+    return f'<td style="font-family:Arial,sans-serif;{style}">{content}</td>'
+
+
+def _stat_cell(num, label, num_color="#1A365D"):
+    return f"""<td style="width:25%;padding:0 6px 0 0;">
+<table width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:18px 10px;text-align:center;">
+<div style="font-size:30px;font-weight:800;color:{num_color};line-height:1;font-family:Arial,sans-serif;">{num}</div>
+<div style="font-size:11px;color:#718096;margin-top:7px;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;line-height:1.4;">{label}</div>
+</td></tr></table></td>"""
+
+
+def _section_header(eyebrow, title):
+    return f"""<tr><td style="padding:32px 40px 0;">
+<div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#A0AEC0;font-family:Arial,sans-serif;margin-bottom:5px;">{eyebrow}</div>
+<div style="font-size:18px;font-weight:700;color:#1A365D;font-family:Arial,sans-serif;padding-bottom:12px;border-bottom:2px solid #EBF4FF;margin-bottom:20px;line-height:1.3;">{title}</div>
+</td></tr>"""
+
+
+def _card_wrap(content, pad="0 40px 28px"):
+    return f'<tr><td style="padding:{pad};">{content}</td></tr>'
+
+
+# ─── Call card — compact Gmail-safe table ─────────────────────────────────────
+def _call_card_html(r: dict, show_rag: bool = True) -> str:
+    cfg      = RAG_COLORS.get(r.get("rag","YELLOW"), RAG_COLORS["YELLOW"])
+    rag      = r.get("rag","YELLOW")
+    reps_str = ", ".join(r.get("reps") or []) or "—"
+    type_lbl = "Merchant" if r.get("call_type")=="CS_AM" else "Ops" if r.get("call_type")=="OPS" else "Internal"
+    type_col = "#2B6CB0" if r.get("call_type")=="CS_AM" else "#6B46C1"
+    type_bg  = "#EBF4FF" if r.get("call_type")=="CS_AM" else "#FAF5FF"
+    ff_url   = r.get("fireflies_url","#")
+
+    s  = f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:12px;border-left:3px solid {cfg["border"]};background:{cfg["bg"]};border-radius:6px;">'
+    s += f'<tr><td style="padding:14px 16px;">'
+
+    # Title + meta in one line
+    s += f'<a href="{ff_url}" style="font-size:14px;font-weight:700;color:#1A202C;text-decoration:none;font-family:Arial,sans-serif;line-height:1.4;">{r["title"]}</a>'
+    s += f' <span style="font-size:10px;font-weight:700;background:{type_bg};color:{type_col};padding:2px 7px;border-radius:8px;">{type_lbl}</span>'
+    if show_rag:
+        s += f' <span style="font-size:10px;font-weight:700;background:{cfg["pill_bg"]};color:{cfg["text"]};padding:2px 8px;border-radius:8px;">{rag_label(rag)}</span>'
+    s += f'<br/><span style="font-size:12px;color:#718096;font-family:Arial,sans-serif;">{r["date"]} &nbsp;·&nbsp; {r["duration"]} &nbsp;·&nbsp; {reps_str}</span>'
+
+    # Bullets
+    bullets = r.get("bullets") or []
+    if not r.get("has_summary"):
+        s += '<br/><span style="font-size:12px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;">No Fireflies summary captured.</span>'
+    elif bullets:
+        s += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;">'
+        for b in bullets:
+            s += f'<tr><td style="font-size:13px;color:#2D3748;font-family:Arial,sans-serif;padding:3px 0 3px 12px;border-bottom:1px solid #EDF2F7;line-height:1.6;">&#8211; {b}</td></tr>'
+        s += '</table>'
+
+    # Action items
+    actions = r.get("action_items") or []
+    if actions:
+        s += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:8px;background:#FFFFFF;border:1px solid #E2E8F0;border-radius:4px;">'
+        s += '<tr><td colspan="2" style="padding:8px 10px 4px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:#4A5568;font-family:Arial,sans-serif;">Takeaways</td></tr>'
+        for item in actions:
+            s += f'<tr><td style="padding:4px 10px;font-size:12px;font-weight:700;color:#2B6CB0;font-family:Arial,sans-serif;width:110px;vertical-align:top;border-top:1px solid #F0F4F8;">{item["owner"]}</td>'
+            s += f'<td style="padding:4px 10px 4px 0;font-size:12px;color:#2D3748;font-family:Arial,sans-serif;line-height:1.5;border-top:1px solid #F0F4F8;">{item["action"]}</td></tr>'
+        s += '</table>'
+
+    s += f'<br/><a href="{ff_url}" style="font-size:11px;font-weight:600;color:#3182CE;text-decoration:none;font-family:Arial,sans-serif;">View in Fireflies &rarr;</a>'
+    s += '</td></tr></table>'
+    return s
+
+
+# ─── Main HTML builder ────────────────────────────────────────────────────────
 def build_html(snapshot, client_reports, internal_reports, missing_ff, date_range, run_date) -> str:
     week_range = f"{date_range['from']} to {date_range['to']}"
-    rag = snapshot["rag_counts"]
+    rag        = snapshot["rag_counts"]
+    csm_counts = snapshot["csm_counts"]
+    max_count  = max(csm_counts.values()) if csm_counts else 1
 
-    css = """
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #EAEEF3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1A202C; -webkit-font-smoothing: antialiased; }
-.outer { max-width: 680px; margin: 0 auto; padding: 32px 16px 48px; }
+    html  = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>'
+    html += '<meta name="viewport" content="width=device-width,initial-scale=1.0"/>'
+    html += '<title>Zeno Weekly Call Report</title></head>'
+    html += '<body style="margin:0;padding:0;background:#EAEEF3;">'
+    html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#EAEEF3;">'
+    html += '<tr><td align="center" style="padding:28px 16px 48px;">'
+    html += '<table width="680" cellpadding="0" cellspacing="0" border="0" style="max-width:680px;width:100%;">'
 
-/* Header */
-.hdr { background: linear-gradient(135deg, #1A365D 0%, #2B6CB0 100%); border-radius: 12px 12px 0 0; padding: 36px 40px; }
-.hdr-brand { font-size: 13px; font-weight: 700; color: #90CDF4; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 10px; }
-.hdr-title { font-size: 24px; font-weight: 800; color: #FFFFFF; line-height: 1.3; }
-.hdr-sub { font-size: 13px; color: #BEE3F8; margin-top: 8px; line-height: 1.5; }
+    # ── Header ────────────────────────────────────────────────────────────────
+    html += '<tr><td style="background:#1A365D;border-radius:12px 12px 0 0;padding:34px 40px;">'
+    html += '<div style="font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:#90CDF4;font-family:Arial,sans-serif;margin-bottom:10px;">Zeno · AMZ Prep</div>'
+    html += '<div style="font-size:24px;font-weight:800;color:#FFFFFF;font-family:Arial,sans-serif;line-height:1.25;margin-bottom:8px;">Weekly Call Visibility Report</div>'
+    html += f'<div style="font-size:13px;color:#BEE3F8;font-family:Arial,sans-serif;line-height:1.6;">Week: {week_range} &nbsp;·&nbsp; Generated {run_date}</div>'
+    html += '</td></tr>'
 
-/* Cards */
-.card { background: #FFFFFF; border-left: 1px solid #DDE3EC; border-right: 1px solid #DDE3EC; padding: 32px 40px; }
-.card + .card { border-top: 1px solid #EDF2F7; }
-.card-last { border-radius: 0 0 12px 12px; border-bottom: 1px solid #DDE3EC; }
-
-/* Section headings */
-.sec-label { font-size: 10px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: #718096; margin-bottom: 6px; }
-.sec-title { font-size: 18px; font-weight: 700; color: #1A365D; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid #EBF4FF; line-height: 1.3; }
-
-/* Stats grid */
-.stats-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.stat-box { flex: 1; min-width: 120px; background: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 20px 16px 18px; text-align: center; }
-.stat-box .num { font-size: 32px; font-weight: 800; color: #1A365D; line-height: 1; }
-.stat-box .lbl { font-size: 11px; color: #718096; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.8px; line-height: 1.4; }
-.stat-box.red   { border-color: #FC8181; }
-.stat-box.yellow{ border-color: #F6AD55; }
-.stat-box.green { border-color: #68D391; }
-.stat-box.red   .num { color: #C53030; }
-.stat-box.yellow .num { color: #92600A; }
-.stat-box.green .num { color: #22543D; }
-
-/* CSM table */
-.csm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
-.csm-table thead tr { background: #EBF4FF; }
-.csm-table th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; color: #2C5282; text-transform: uppercase; letter-spacing: 0.7px; }
-.csm-table td { padding: 12px 14px; border-bottom: 1px solid #F0F4F8; vertical-align: middle; }
-.csm-table tr:last-child td { border-bottom: none; }
-.csm-table .name { font-weight: 600; color: #2D3748; font-size: 14px; }
-.csm-table .count { font-size: 14px; font-weight: 700; color: #2B6CB0; }
-.bar-wrap { height: 8px; background: #EBF4FF; border-radius: 4px; overflow: hidden; margin-top: 6px; min-width: 80px; }
-.bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3182CE, #63B3ED); }
-
-/* Call cards */
-.call-card { border-radius: 10px; padding: 22px 24px; margin-bottom: 16px; border-left: 4px solid #CBD5E0; }
-.call-card:last-child { margin-bottom: 0; }
-.call-card-title { font-size: 15px; font-weight: 700; color: #1A202C; line-height: 1.4; margin-bottom: 6px; }
-.call-card-title a { color: #1A202C; text-decoration: none; }
-.call-card-title a:hover { text-decoration: underline; }
-.call-type-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 10px; margin-left: 8px; vertical-align: middle; letter-spacing: 0.5px; text-transform: uppercase; }
-.badge-merchant { background: #EBF4FF; color: #2B6CB0; }
-.badge-ops { background: #FAF5FF; color: #6B46C1; }
-.call-meta { font-size: 13px; color: #718096; margin-bottom: 14px; line-height: 1.6; }
-.call-meta strong { color: #4A5568; font-weight: 600; }
-
-/* RAG pill */
-.rag-row { margin-bottom: 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.rag-pill { display: inline-block; font-size: 11px; font-weight: 700; padding: 5px 14px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase; }
-.rag-reason-txt { font-size: 13px; font-style: italic; color: #4A5568; line-height: 1.5; }
-
-/* Summary bullets */
-.summary-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #4A5568; margin-bottom: 10px; }
-.bullets { list-style: none; padding: 0; margin: 0 0 16px 0; }
-.bullets li { font-size: 14px; color: #2D3748; line-height: 1.7; padding: 5px 0 5px 18px; position: relative; border-bottom: 1px solid #F7FAFC; }
-.bullets li:last-child { border-bottom: none; }
-.bullets li::before { content: "–"; position: absolute; left: 0; color: #A0AEC0; font-weight: 700; }
-.no-summary-note { font-size: 13px; color: #A0AEC0; font-style: italic; padding: 12px 0; }
-
-/* Action items */
-.action-block { background: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 18px; margin-top: 14px; }
-.action-block-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #4A5568; margin-bottom: 12px; }
-.action-row { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #EDF2F7; font-size: 13px; line-height: 1.5; }
-.action-row:last-child { border-bottom: none; padding-bottom: 0; }
-.action-owner { font-weight: 700; color: #2B6CB0; min-width: 110px; flex-shrink: 0; }
-.action-text { color: #2D3748; }
-
-/* Fireflies link */
-.ff-link { display: inline-block; margin-top: 14px; font-size: 12px; font-weight: 600; color: #3182CE; text-decoration: none; }
-
-/* Internal calls - compact */
-.internal-card { background: #FAFBFD; border: 1px solid #E2E8F0; border-radius: 8px; padding: 18px 20px; margin-bottom: 12px; }
-.internal-card:last-child { margin-bottom: 0; }
-.internal-title { font-size: 14px; font-weight: 700; color: #2D3748; margin-bottom: 5px; line-height: 1.4; }
-.internal-title a { color: #2D3748; text-decoration: none; }
-.internal-meta { font-size: 12px; color: #A0AEC0; margin-bottom: 10px; line-height: 1.5; }
-.internal-bullets { list-style: none; padding: 0; margin: 0; }
-.internal-bullets li { font-size: 13px; color: #4A5568; padding: 4px 0 4px 16px; position: relative; line-height: 1.6; }
-.internal-bullets li::before { content: "–"; position: absolute; left: 0; color: #CBD5E0; }
-
-/* Missing FF */
-.ff-row { padding: 9px 0; border-bottom: 1px solid #F0F4F8; font-size: 13px; color: #4A5568; line-height: 1.5; }
-.ff-row:last-child { border-bottom: none; }
-.ff-reasons { list-style: none; padding: 0; margin: 0 0 16px 0; }
-.ff-reasons li { font-size: 13px; color: #4A5568; padding: 5px 0 5px 16px; position: relative; line-height: 1.5; }
-.ff-reasons li::before { content: "·"; position: absolute; left: 0; color: #A0AEC0; font-weight: 700; }
-
-/* Footer */
-.footer { text-align: center; padding: 24px 20px; font-size: 12px; color: #A0AEC0; line-height: 2; }
-.footer a { color: #3182CE; text-decoration: none; }
-"""
-
-    # ── HTML open ─────────────────────────────────────────────────────────────
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>Zeno — Weekly Call Report</title>
-<style>{css}</style>
-</head>
-<body>
-<div class="outer">
-
-<!-- HEADER -->
-<div class="hdr">
-  <div class="hdr-brand">Zeno · AMZ Prep</div>
-  <div class="hdr-title">Weekly Call Visibility Report</div>
-  <div class="hdr-sub">Week: {week_range} &nbsp;·&nbsp; Generated {run_date}</div>
-</div>"""
+    # ── White card wrapper starts ──────────────────────────────────────────────
+    html += '<tr><td style="background:#FFFFFF;border-left:1px solid #DDE3EC;border-right:1px solid #DDE3EC;">'
+    html += '<table width="100%" cellpadding="0" cellspacing="0" border="0">'
 
     # ── Snapshot ──────────────────────────────────────────────────────────────
-    html += f"""
-<!-- SNAPSHOT -->
-<div class="card">
-  <div class="sec-label">Overview</div>
-  <div class="sec-title">Week at a Glance</div>
-  <div class="stats-grid">
-    <div class="stat-box">
-      <div class="num">{snapshot['total_cs_am']}</div>
-      <div class="lbl">Merchant Calls</div>
-    </div>
-    <div class="stat-box">
-      <div class="num">{snapshot['total_ops']}</div>
-      <div class="lbl">Warehouse / Ops Calls</div>
-    </div>
-    <div class="stat-box">
-      <div class="num">{snapshot['total_internal']}</div>
-      <div class="lbl">Internal Calls</div>
-    </div>
-    <div class="stat-box">
-      <div class="num">{snapshot['total_all']}</div>
-      <div class="lbl">Total Calls</div>
-    </div>
-  </div>
-  <div class="stats-grid">
-    <div class="stat-box red">
-      <div class="num">{rag['RED']}</div>
-      <div class="lbl">Needs Attention</div>
-    </div>
-    <div class="stat-box yellow">
-      <div class="num">{rag['YELLOW']}</div>
-      <div class="lbl">Monitor Closely</div>
-    </div>
-    <div class="stat-box green">
-      <div class="num">{rag['GREEN']}</div>
-      <div class="lbl">On Track</div>
-    </div>
-  </div>
-</div>"""
+    html += _section_header("Overview", "Week at a Glance")
+    html += '<tr><td style="padding:0 40px 10px;">'
+    html += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+    html += _stat_cell(snapshot["total_cs_am"], "Merchant Calls")
+    html += _stat_cell(snapshot["total_ops"], "Warehouse / Ops")
+    html += _stat_cell(snapshot["total_internal"], "Internal Calls")
+    html += _stat_cell(snapshot["total_all"], "Total Calls")
+    html += '</tr></table></td></tr>'
+    html += '<tr><td style="padding:10px 40px 28px;">'
+    html += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+    html += _stat_cell(rag["RED"],    "Needs Attention",  "#C53030")
+    html += _stat_cell(rag["YELLOW"], "Monitor Closely",  "#92600A")
+    html += _stat_cell(rag["GREEN"],  "On Track",         "#22543D")
+    html += _stat_cell(len(missing_ff), "Missing Recordings", "#718096")
+    html += '</tr></table></td></tr>'
+
+    # ── Divider ───────────────────────────────────────────────────────────────
+    html += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
 
     # ── CSM Breakdown ─────────────────────────────────────────────────────────
-    csm_counts = snapshot["csm_counts"]
-    max_calls  = max(csm_counts.values()) if csm_counts else 1
-    sorted_csm = sorted(csm_counts.items(), key=lambda x: -x[1])
-
-    html += """
-<!-- CSM BREAKDOWN -->
-<div class="card">
-  <div class="sec-label">Team</div>
-  <div class="sec-title">CSM Client Call Breakdown</div>
-  <table class="csm-table">
-    <thead><tr>
-      <th>CSM</th>
-      <th>Client Calls</th>
-      <th style="width:200px;">Volume</th>
-    </tr></thead>
-    <tbody>"""
-
-    for email, count in sorted_csm:
+    html += _section_header("Team", "CSM Client Call Breakdown")
+    html += '<tr><td style="padding:0 40px 28px;">'
+    html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:6px;overflow:hidden;">'
+    html += '<tr style="background:#EBF4FF;"><td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">CSM</td>'
+    html += '<td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;width:80px;">Calls</td>'
+    html += '<td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;width:200px;">Volume</td></tr>'
+    for email, count in sorted(csm_counts.items(), key=lambda x: -x[1]):
         name = TEAM_NAMES.get(email, email.split("@")[0].title())
-        pct  = int((count / max_calls) * 100)
-        html += f"""
-      <tr>
-        <td class="name">{name}</td>
-        <td class="count">{count}</td>
-        <td>
-          <div class="bar-wrap">
-            <div class="bar-fill" style="width:{pct}%;"></div>
-          </div>
-        </td>
-      </tr>"""
+        pct  = int((count / max_count) * 100)
+        html += f'<tr style="border-bottom:1px solid #F0F4F8;">'
+        html += f'<td style="padding:11px 14px;font-size:14px;font-weight:600;color:#2D3748;font-family:Arial,sans-serif;">{name}</td>'
+        html += f'<td style="padding:11px 14px;font-size:14px;font-weight:700;color:#2B6CB0;font-family:Arial,sans-serif;">{count}</td>'
+        html += f'<td style="padding:11px 14px;"><table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+        html += f'<td style="background:#EBF4FF;border-radius:4px;height:8px;"><table height="8" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#3182CE;border-radius:4px;width:{pct}%;min-width:4px;">&nbsp;</td></tr></table></td>'
+        html += f'</tr></table></td></tr>'
+    html += '</table></td></tr>'
 
-    html += """
-    </tbody>
-  </table>
-</div>"""
+    html += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
 
     # ── Client Calls ──────────────────────────────────────────────────────────
-    html += f"""
-<!-- CLIENT CALLS -->
-<div class="card">
-  <div class="sec-label">External</div>
-  <div class="sec-title">Client Calls &nbsp;<span style="font-size:14px;font-weight:500;color:#718096;">({len(client_reports)} calls)</span></div>"""
+    total_client = len(client_reports)
+    full_client  = client_reports[:MAX_CLIENT_FULL]
+    rest_client  = client_reports[MAX_CLIENT_FULL:]
 
+    html += _section_header("External", f'Client Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({total_client} calls)</span>')
+    html += '<tr><td style="padding:0 40px 28px;">'
     if not client_reports:
-        html += """<p style="font-size:14px;color:#A0AEC0;font-style:italic;">No external calls recorded this week.</p>"""
+        html += '<p style="font-size:14px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;margin:0;">No client calls this week.</p>'
     else:
-        for r in client_reports:
-            cfg      = RAG_COLORS.get(r["rag"], RAG_COLORS["YELLOW"])
-            type_cls = "badge-merchant" if r["call_type"] == "CS_AM" else "badge-ops"
-            type_lbl = "Merchant" if r["call_type"] == "CS_AM" else "Warehouse / Ops"
-            reps_str = ", ".join(r["reps"]) or "—"
+        for r in full_client:
+            html += _call_card_html(r, show_rag=True)
+        if rest_client:
+            html += f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-top:8px;">'
+            html += f'<tr><td style="padding:14px 18px;">'
+            html += f'<div style="font-size:13px;font-weight:700;color:#4A5568;font-family:Arial,sans-serif;margin-bottom:10px;">{len(rest_client)} additional client calls — see full list in Fireflies</div>'
+            for r in rest_client:
+                reps = ", ".join(r.get("reps") or []) or "—"
+                html += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:5px 0;border-bottom:1px solid #EDF2F7;">'
+                html += f'<a href="{r["fireflies_url"]}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{r["title"][:60]}</a>'
+                html += f' &nbsp;·&nbsp; {r["date"]} &nbsp;·&nbsp; {reps}</div>'
+            html += '</td></tr></table>'
+    html += '</td></tr>'
 
-            html += f"""
-  <div class="call-card" style="background:{cfg['bg']};border-left-color:{cfg['border']};">
+    html += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
 
-    <div class="call-card-title">
-      <a href="{r['fireflies_url']}">{r['title']}</a>
-      <span class="call-type-badge {type_cls}">{type_lbl}</span>
-    </div>
-
-    <div class="call-meta">
-      <strong>Date:</strong> {r['date']} &nbsp;·&nbsp;
-      <strong>Duration:</strong> {r['duration']} &nbsp;·&nbsp;
-      <strong>Rep:</strong> {reps_str}
-    </div>
-
-    <div class="rag-row">
-      <span class="rag-pill" style="background:{cfg['pill_bg']};color:{cfg['text']};">{r['rag_label']}</span>
-      <span class="rag-reason-txt">{r['rag_label'] == 'On Track' and 'No concerns raised on this call.' or ''}</span>
-    </div>"""
-
-            if not r["has_summary"]:
-                html += """<p class="no-summary-note">Fireflies did not capture a summary for this call. Check that the Chrome extension is active.</p>"""
-            else:
-                html += """<div class="summary-label">Call Summary</div>
-    <ul class="bullets">"""
-                for b in r["bullets"]:
-                    html += f"<li>{b}</li>"
-                html += "</ul>"
-
-            if r["action_items"]:
-                html += """<div class="action-block">
-      <div class="action-block-title">Action Items &amp; Takeaways</div>"""
-                for item in r["action_items"]:
-                    html += f"""
-      <div class="action-row">
-        <span class="action-owner">{item['owner']}</span>
-        <span class="action-text">{item['action']}</span>
-      </div>"""
-                html += "</div>"
-            else:
-                html += """<div class="action-block">
-      <div class="action-block-title">Action Items &amp; Takeaways</div>
-      <p style="font-size:13px;color:#A0AEC0;font-style:italic;margin:0;">No action items captured for this call.</p>
-    </div>"""
-
-            html += f"""
-    <a href="{r['fireflies_url']}" class="ff-link">View full transcript in Fireflies &rarr;</a>
-  </div>"""
-
-    html += "\n</div>"
-
-    # ── Internal Calls ────────────────────────────────────────────────────────
-    html += f"""
-<!-- INTERNAL CALLS -->
-<div class="card">
-  <div class="sec-label">Internal</div>
-  <div class="sec-title">Internal Calls &nbsp;<span style="font-size:14px;font-weight:500;color:#718096;">({len(internal_reports)} calls)</span></div>"""
-
+    # ── Internal Calls — compact table ──────────────────────────────────────
+    total_internal = len(internal_reports)
+    html += _section_header("Internal", f'Internal Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({total_internal} calls)</span>')
+    html += '<tr><td style="padding:0 40px 28px;">'
     if not internal_reports:
-        html += """<p style="font-size:14px;color:#A0AEC0;font-style:italic;">No internal calls recorded this week.</p>"""
+        html += '<p style="font-size:14px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;margin:0;">No internal calls this week.</p>'
     else:
-        for r in internal_reports:
-            reps_str = ", ".join(r["reps"]) or "—"
-            html += f"""
-  <div class="internal-card">
-    <div class="internal-title">
-      <a href="{r['fireflies_url']}">{r['title']}</a>
-    </div>
-    <div class="internal-meta">
-      {r['date']} &nbsp;·&nbsp; {r['duration']} &nbsp;·&nbsp; {reps_str}
-    </div>"""
-
-            if r["bullets"]:
-                html += """<ul class="internal-bullets">"""
-                for b in r["bullets"]:
-                    html += f"<li>{b}</li>"
-                html += "</ul>"
-            else:
-                html += """<p style="font-size:13px;color:#A0AEC0;font-style:italic;margin:0;">No summary available.</p>"""
-
-            if r["action_items"]:
-                html += """<div style="margin-top:10px;padding-top:10px;border-top:1px solid #EDF2F7;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#718096;margin-bottom:8px;">Takeaways</div>"""
-                for item in r["action_items"]:
-                    html += f"""<div style="font-size:13px;color:#4A5568;padding:4px 0;line-height:1.5;">
-        <span style="font-weight:700;color:#4A5568;">{item['owner']}:</span> {item['action']}
-      </div>"""
-                html += "</div>"
-
-            html += "\n  </div>"
-
-    html += "\n</div>"
+        html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #E2E8F0;border-radius:6px;">'
+        html += '<tr style="background:#EBF4FF;"><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">Title</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:90px;font-family:Arial,sans-serif;">Date</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:55px;font-family:Arial,sans-serif;">Dur</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:120px;font-family:Arial,sans-serif;">Rep</td></tr>'
+        for r in internal_reports[:30]:
+            reps = ", ".join(r.get("reps") or []) or "—"
+            html += f'<tr style="border-top:1px solid #F0F4F8;"><td style="padding:8px 14px;font-size:13px;font-family:Arial,sans-serif;"><a href="{r['fireflies_url']}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{r['title'][:55]}</a></td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{r['date']}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{r['duration']}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{reps[:22]}</td></tr>'
+        if total_internal > 30:
+            html += f'<tr><td colspan="4" style="padding:8px 14px;font-size:12px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;border-top:1px solid #F0F4F8;">... and {total_internal-30} more internal calls this week</td></tr>'
+        html += '</table>'
+    html += '</td></tr>'
+    html += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
 
     # ── Missing Fireflies ─────────────────────────────────────────────────────
-    ext_missing = [m for m in missing_ff if m["type"] in ("CS_AM", "OPS")]
-    int_missing = [m for m in missing_ff if m["type"] == "INTERNAL"]
-
-    html += f"""
-<!-- FIREFLIES COVERAGE -->
-<div class="card card-last">
-  <div class="sec-label">Coverage</div>
-  <div class="sec-title">Fireflies Recording Coverage</div>"""
-
+    html += _section_header("Coverage", "Fireflies Recording Coverage")
+    html += '<tr><td style="padding:0 40px 28px;">'
     if not missing_ff:
-        html += """<p style="font-size:14px;color:#22543D;font-weight:600;">
-    All calls were recorded this week. Coverage is complete.
-  </p>"""
+        html += '<p style="font-size:14px;color:#22543D;font-weight:600;font-family:Arial,sans-serif;margin:0;">All calls recorded this week. Coverage is complete.</p>'
     else:
-        html += f"""<p style="font-size:14px;color:#C53030;font-weight:600;margin-bottom:6px;">
-    {len(missing_ff)} call(s) not recorded &nbsp;·&nbsp;
-    {len(ext_missing)} external &nbsp;·&nbsp; {len(int_missing)} internal
-  </p>
-  <p style="font-size:13px;color:#718096;margin-bottom:16px;line-height:1.6;">
-    Every call — internal and external — should appear in Fireflies automatically
-    once the Chrome extension is installed and active. No manual bot invite is needed.
-    Common reasons calls go missing:
-  </p>
-  <ul class="ff-reasons">"""
-        for reason in FIREFLIES_MISSING_REASONS:
-            html += f"<li>{reason}</li>"
-        html += "</ul>"
+        ext_m = [m for m in missing_ff if m["type"] in ("CS_AM","OPS")]
+        int_m = [m for m in missing_ff if m["type"] == "INTERNAL"]
+        html += f'<p style="font-size:14px;color:#C53030;font-weight:600;font-family:Arial,sans-serif;margin:0 0 6px 0;">{len(missing_ff)} call(s) not recorded &nbsp;·&nbsp; {len(ext_m)} external &nbsp;·&nbsp; {len(int_m)} internal</p>'
+        html += '<p style="font-size:13px;color:#718096;font-family:Arial,sans-serif;margin:0 0 14px 0;line-height:1.6;">Every call should appear in Fireflies automatically once the Chrome extension is installed and active. No manual bot invite is needed.</p>'
+        if ext_m:
+            html += '<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#C53030;font-family:Arial,sans-serif;margin-bottom:8px;letter-spacing:0.8px;">External — Priority to Fix</div>'
+            for m in ext_m:
+                reps = ", ".join(m.get("reps") or []) or "—"
+                html += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:8px 0;border-bottom:1px solid #F0F4F8;line-height:1.5;"><b>{m["title"][:60]}</b> &nbsp;·&nbsp; {m["date"]} &nbsp;·&nbsp; {reps}</div>'
+        if int_m:
+            html += '<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#92600A;font-family:Arial,sans-serif;margin:16px 0 8px 0;letter-spacing:0.8px;">Internal</div>'
+            for m in int_m[:MAX_MISSING_FF]:
+                reps = ", ".join(m.get("reps") or []) or "—"
+                html += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:8px 0;border-bottom:1px solid #F0F4F8;line-height:1.5;">{m["title"][:60]} &nbsp;·&nbsp; {m["date"]} &nbsp;·&nbsp; {reps}</div>'
+            if len(int_m) > MAX_MISSING_FF:
+                html += f'<p style="font-size:12px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;padding-top:6px;margin:0;">... and {len(int_m)-MAX_MISSING_FF} more internal calls not recorded.</p>'
+    html += '</td></tr>'
 
-        if ext_missing:
-            html += f"""<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#C53030;margin-bottom:10px;">
-    External — Priority to Fix ({len(ext_missing)})
-  </div>"""
-            for m in ext_missing:
-                reps = ", ".join(m["reps"]) or "—"
-                html += f"""<div class="ff-row">
-    <strong>{m['title']}</strong> &nbsp;·&nbsp; {m['date']} &nbsp;·&nbsp; {reps}
-  </div>"""
-
-        if int_missing:
-            html += f"""<div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:#92600A;margin:18px 0 10px;">
-    Internal ({len(int_missing)})
-  </div>"""
-            for m in int_missing[:12]:
-                reps = ", ".join(m["reps"]) or "—"
-                html += f"""<div class="ff-row">
-    {m['title']} &nbsp;·&nbsp; {m['date']} &nbsp;·&nbsp; {reps}
-  </div>"""
-            if len(int_missing) > 12:
-                html += f"""<p style="font-size:12px;color:#A0AEC0;font-style:italic;padding-top:8px;">
-    ... and {len(int_missing) - 12} more internal calls not recorded.
-  </p>"""
-
-    html += "</div>"
-
-    # ── Footer ────────────────────────────────────────────────────────────────
-    html += f"""
-<!-- FOOTER -->
-<div class="footer">
-  Sent by <strong>Zeno</strong> &nbsp;·&nbsp; AMZ Prep Call QA Agent<br/>
-  Report generated {run_date} &nbsp;·&nbsp;
-  Questions: <a href="mailto:ari@amzprep.com">ari@amzprep.com</a>
-</div>
-
-</div><!-- outer -->
-</body>
-</html>"""
+    # ── Close white card, footer ───────────────────────────────────────────────
+    html += '</table></td></tr>'
+    html += '<tr><td style="background:#FFFFFF;border-radius:0 0 12px 12px;border:1px solid #DDE3EC;border-top:none;padding:20px 40px;text-align:center;">'
+    html += f'<p style="font-size:12px;color:#A0AEC0;font-family:Arial,sans-serif;line-height:2;margin:0;">Sent by <b style="color:#4A5568;">Zeno</b> &nbsp;·&nbsp; AMZ Prep Call QA Agent &nbsp;·&nbsp; Report generated {run_date}<br/>'
+    html += 'Questions: <a href="mailto:ari@amzprep.com" style="color:#3182CE;text-decoration:none;">ari@amzprep.com</a></p>'
+    html += '</td></tr>'
+    html += '</table></td></tr></table></body></html>'
 
     return html
 
@@ -671,7 +463,7 @@ def send_email(subject: str, html: str) -> bool:
         timeout=30,
     )
     if resp.ok:
-        log.info(f"Report sent to {', '.join(to_list)}")
+        log.info(f"Report sent to: {', '.join(to_list)}")
         log.info(f"CC: {', '.join(CC_RECIPIENTS)}")
         return True
     log.error(f"Email failed: {resp.status_code} {resp.text[:300]}")
@@ -684,7 +476,6 @@ def main():
     run_date   = data["run_date"]
     calls      = data["calls"]
     date_range = data["date_range"]
-
     log.info(f"Processing {len(calls)} calls | {date_range['from']} to {date_range['to']}")
 
     snapshot         = build_snapshot(calls)
@@ -693,9 +484,13 @@ def main():
     missing          = build_missing_ff(calls)
 
     log.info(f"Client: {snapshot['total_client']} | Internal: {snapshot['total_internal']} | Missing FF: {len(missing)}")
-    log.info(f"RAG — RED: {snapshot['rag_counts']['RED']} | YELLOW: {snapshot['rag_counts']['YELLOW']} | GREEN: {snapshot['rag_counts']['GREEN']}")
 
     html     = build_html(snapshot, client_reports, internal_reports, missing, date_range, run_date)
+    size_kb  = len(html.encode("utf-8")) // 1024
+    log.info(f"HTML size: {size_kb}KB (Gmail limit: ~100KB)")
+    if size_kb > 90:
+        log.warning(f"HTML size {size_kb}KB may be clipped by Gmail")
+
     out_path = OUTPUT_DIR / f"call_report_{run_date}.html"
     out_path.write_text(html)
     log.info(f"Saved to {out_path}")

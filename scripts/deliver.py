@@ -61,256 +61,211 @@ def load_latest_digest() -> tuple[dict, Path]:
 
 
 # ─── HTML email builder ───────────────────────────────────────────────────────
-
-# Import helpers from call_report (same logic, no duplication)
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).parent))
 from call_report import (
     detect_rag, rag_label, get_rep_names, extract_bullets,
     extract_action_items, TEAM_NAMES, RAG_COLORS,
+    _section_header, _stat_cell, _call_card_html,
+    MAX_CLIENT_FULL, MAX_INTERNAL_FULL, MAX_MISSING_FF,
 )
 
-RAG_PILL_CLASS = {"RED": "rag-red", "YELLOW": "rag-yellow", "GREEN": "rag-green"}
-
-
-def _stat_box(num, label):
-    return f"""<div class="stat-box"><div class="num">{num}</div><div class="lbl">{label}</div></div>"""
-
-
-def _call_card(call: dict, show_rag: bool = True) -> str:
-    """Render a single call card with summary bullets and action items."""
-    rag      = detect_rag(call)
-    cfg      = RAG_COLORS.get(rag, RAG_COLORS["YELLOW"])
-    pill_cls = RAG_PILL_CLASS.get(rag, "rag-yellow")
-    reps     = ", ".join(get_rep_names(call)) or "—"
-    date     = (call.get("date") or "")[:10]
-    dur      = f"{int(call.get('duration_minutes') or 0)} min"
-    title    = call.get("title") or "Untitled"
-    ff_url   = f"https://app.fireflies.ai/view/{call.get('id','')}"
-    bullets  = extract_bullets(call)
-    actions  = extract_action_items(call)
-
-    ctype    = call.get("call_type", "")
-    type_lbl = "Merchant" if ctype == "CS_AM" else "Warehouse / Ops" if ctype == "OPS" else "Internal"
-    type_cls = "badge-merchant" if ctype == "CS_AM" else "badge-ops"
-
-    html = f"""
-<div class="call-card" style="background:{cfg['bg']};border-left-color:{cfg['border']};">
-  <div class="call-card-header">
-    <div class="call-title">
-      <a href="{ff_url}">{title}</a>
-      <span class="type-badge {type_cls}">{type_lbl}</span>
-    </div>"""
-
-    if show_rag:
-        html += f"""<span class="rag-pill {pill_cls}" style="flex-shrink:0;">{rag_label(rag)}</span>"""
-
-    html += f"""
-  </div>
-  <div class="call-meta">
-    <strong>Date:</strong> {date} &nbsp;·&nbsp;
-    <strong>Duration:</strong> {dur} &nbsp;·&nbsp;
-    <strong>Rep:</strong> {reps}
-  </div>"""
-
-    if not call.get("short_summary"):
-        html += """<p style="font-size:13px;color:#A0AEC0;font-style:italic;margin-bottom:12px;">
-    No Fireflies summary available for this call.</p>"""
-    else:
-        html += """<div class="summary-label">Call Summary</div><ul class="bullets">"""
-        for b in bullets:
-            html += f"<li>{b}</li>"
-        html += "</ul>"
-
-    html += """<div class="action-block"><div class="action-block-title">Action Items &amp; Takeaways</div>"""
-    if actions:
-        for item in actions:
-            html += f"""<div class="action-row">
-      <span class="action-owner">{item['owner']}</span>
-      <span class="action-text">{item['action']}</span>
-    </div>"""
-    else:
-        html += """<p class="no-action">No action items captured for this call.</p>"""
-    html += "</div>"
-
-    html += f"""<a href="{ff_url}" class="ff-link">View full transcript in Fireflies &rarr;</a>
-</div>"""
-    return html
+MAX_FLAG_TYPES = 5
+MAX_FLAG_CALLS = 3
 
 
 def build_email_html(digest: dict, recipient_name: str) -> str:
+    from collections import defaultdict
+
     template   = (TEMPLATES_DIR / "email_digest.html").read_text()
     date_range = digest["date_range"]
     week_range = f"{date_range['from']} to {date_range['to']}"
+    all_calls  = digest.get("calls") or []
 
-    # All calls from digest — graded calls JSON has full call data
-    all_calls     = digest.get("calls") or []
-    client_calls  = [c for c in all_calls if c.get("call_type") in ("CS_AM", "OPS")]
-    internal_calls= [c for c in all_calls if c.get("call_type") == "INTERNAL"]
-    missing_ff    = digest.get("missing_fireflies") or []
+    client_calls   = [c for c in all_calls if c.get("call_type") in ("CS_AM","OPS")]
+    internal_calls = [c for c in all_calls if c.get("call_type") == "INTERNAL"]
+    missing_ff     = digest.get("missing_fireflies") or []
 
-    # RAG counts across client calls
-    rag_counts = {"RED": 0, "YELLOW": 0, "GREEN": 0}
+    rag_counts = {"RED":0,"YELLOW":0,"GREEN":0}
     for c in client_calls:
         rag_counts[detect_rag(c)] += 1
 
-    # CSM client call counts
-    from collections import defaultdict
     csm_counts = defaultdict(int)
     for c in client_calls:
-        for email in (c.get("team_members_on_call") or []):
-            if email in TEAM_NAMES:
-                csm_counts[email] += 1
+        for e in (c.get("team_members_on_call") or []):
+            if e in TEAM_NAMES: csm_counts[e] += 1
     max_count = max(csm_counts.values()) if csm_counts else 1
 
-    # ── Header tokens ─────────────────────────────────────────────────────────
     template = template.replace("{{recipient_name}}", recipient_name)
     template = template.replace("{{week_range}}", week_range)
 
-    # ── Snapshot section ──────────────────────────────────────────────────────
-    snap = f"""<div class="card">
-  <div class="sec-eyebrow">Overview</div>
-  <div class="sec-title">Week at a Glance</div>
-  <div class="stats-grid">
-    {_stat_box(len(client_calls), "Client Calls")}
-    {_stat_box(len([c for c in client_calls if c.get("call_type")=="CS_AM"]), "Merchant Calls")}
-    {_stat_box(len([c for c in client_calls if c.get("call_type")=="OPS"]), "Warehouse / Ops")}
-    {_stat_box(len(internal_calls), "Internal Calls")}
-  </div>
-  <div class="stats-grid" style="margin-top:12px;">
-    <div class="stat-box" style="border-color:#FC8181;"><div class="num" style="color:#C53030;">{rag_counts['RED']}</div><div class="lbl">Needs Attention</div></div>
-    <div class="stat-box" style="border-color:#F6AD55;"><div class="num" style="color:#92600A;">{rag_counts['YELLOW']}</div><div class="lbl">Monitor Closely</div></div>
-    <div class="stat-box" style="border-color:#68D391;"><div class="num" style="color:#22543D;">{rag_counts['GREEN']}</div><div class="lbl">On Track</div></div>
-    {_stat_box(len(missing_ff), "Missing Recordings")}
-  </div>
-</div>"""
+    # ── Snapshot ──────────────────────────────────────────────────────────────
+    snap  = _section_header("Overview", "Week at a Glance")
+    snap += '<tr><td style="padding:0 40px 10px;">'
+    snap += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+    snap += _stat_cell(len(client_calls), "Client Calls")
+    snap += _stat_cell(len([c for c in client_calls if c.get("call_type")=="CS_AM"]), "Merchant Calls")
+    snap += _stat_cell(len([c for c in client_calls if c.get("call_type")=="OPS"]), "Warehouse / Ops")
+    snap += _stat_cell(len(internal_calls), "Internal Calls")
+    snap += '</tr></table></td></tr>'
+    snap += '<tr><td style="padding:10px 40px 28px;">'
+    snap += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
+    snap += _stat_cell(rag_counts["RED"],    "Needs Attention",  "#C53030")
+    snap += _stat_cell(rag_counts["YELLOW"], "Monitor Closely",  "#92600A")
+    snap += _stat_cell(rag_counts["GREEN"],  "On Track",         "#22543D")
+    snap += _stat_cell(len(missing_ff),      "Missing Recordings","#718096")
+    snap += '</tr></table></td></tr>'
+    snap += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
     template = template.replace("{{snapshot_section}}", snap)
 
     # ── CSM breakdown ─────────────────────────────────────────────────────────
-    csm_rows = ""
+    csm  = _section_header("Team", "CSM Client Call Breakdown")
+    csm += '<tr><td style="padding:0 40px 28px;">'
+    csm += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:6px;overflow:hidden;">'
+    csm += '<tr style="background:#EBF4FF;"><td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">CSM</td>'
+    csm += '<td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;width:80px;">Calls</td>'
+    csm += '<td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;width:200px;">Volume</td></tr>'
     for email, count in sorted(csm_counts.items(), key=lambda x: -x[1]):
         name = TEAM_NAMES.get(email, email.split("@")[0].title())
         pct  = int((count / max_count) * 100)
-        csm_rows += f"""<tr>
-      <td class="rep-name">{name}</td>
-      <td class="rep-count">{count}</td>
-      <td><div class="bar-wrap"><div class="bar-fill" style="width:{pct}%;"></div></div></td>
-    </tr>"""
-
-    csm_sec = f"""<div class="card">
-  <div class="sec-eyebrow">Team</div>
-  <div class="sec-title">CSM Client Call Breakdown</div>
-  <table class="csm-table">
-    <thead><tr>
-      <th>CSM</th><th>Client Calls</th><th style="width:180px;">Volume</th>
-    </tr></thead>
-    <tbody>{csm_rows}</tbody>
-  </table>
-</div>"""
-    template = template.replace("{{csm_section}}", csm_sec)
+        csm += f'<tr style="border-bottom:1px solid #F0F4F8;">'
+        csm += f'<td style="padding:11px 14px;font-size:14px;font-weight:600;color:#2D3748;font-family:Arial,sans-serif;">{name}</td>'
+        csm += f'<td style="padding:11px 14px;font-size:14px;font-weight:700;color:#2B6CB0;font-family:Arial,sans-serif;">{count}</td>'
+        csm += f'<td style="padding:11px 14px;"><table width="{pct}%" cellpadding="0" cellspacing="0" border="0"><tr><td style="background:#3182CE;height:8px;border-radius:4px;min-width:4px;">&nbsp;</td></tr></table></td></tr>'
+    csm += '</table></td></tr>'
+    csm += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
+    template = template.replace("{{csm_section}}", csm)
 
     # ── Flagged calls ─────────────────────────────────────────────────────────
     flagged = digest.get("flagged_calls") or {}
-    if flagged:
-        flag_inner = ""
-        priority_order = [
-            "churn_language", "competitor_mentioned", "sla_miss_no_resolution",
-            "pricing_pushback", "negative_sentiment_end", "no_next_step",
-            "short_call", "fireflies_missing", "repeat_issue",
-        ]
-        sorted_flags = sorted(
-            flagged.items(),
-            key=lambda x: priority_order.index(x[0]) if x[0] in priority_order else 99
-        )
-        for flag_key, flag_calls in sorted_flags[:5]:
-            flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
-            flag_inner += f'<div class="flag-section-title">{flag_label}</div>'
-            for fc in flag_calls[:3]:
+    priority_order = [
+        "churn_language","competitor_mentioned","sla_miss_no_resolution",
+        "pricing_pushback","negative_sentiment_end","no_next_step",
+        "short_call","fireflies_missing","repeat_issue",
+    ]
+    sorted_flags = sorted(flagged.items(),
+        key=lambda x: priority_order.index(x[0]) if x[0] in priority_order else 99)
+
+    if sorted_flags:
+        fl  = _section_header("Action Required", "Flagged Calls")
+        fl += '<tr><td style="padding:0 40px 28px;">'
+        for flag_key, flag_calls in sorted_flags[:MAX_FLAG_TYPES]:
+            flag_label_txt = digest.get("flag_definitions", {}).get(flag_key, flag_key)
+            fl += f'<div style="font-size:13px;font-weight:700;color:#C53030;font-family:Arial,sans-serif;margin-bottom:8px;">{flag_label_txt}</div>'
+            for fc in flag_calls[:MAX_FLAG_CALLS]:
                 date_str = (fc.get("date") or "")[:10]
                 rep_str  = (fc.get("organizer") or "").split("@")[0]
-                flag_inner += f"""<div class="flag-call-row">
-          <a href="{fc['fireflies_url']}">{fc['title']}</a>
-          &nbsp;·&nbsp; {date_str} &nbsp;·&nbsp; {rep_str}
-        </div>"""
-            flag_inner += '<div style="height:14px;"></div>'
-        flag_sec = f"""<div class="card">
-  <div class="sec-eyebrow">Action Required</div>
-  <div class="sec-title">Flagged Calls</div>
-  {flag_inner}
-</div>"""
+                fl += f'<div style="font-size:13px;font-family:Arial,sans-serif;padding:7px 0;border-bottom:1px solid #F0F4F8;color:#4A5568;line-height:1.5;">'
+                fl += f'<a href="{fc["fireflies_url"]}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{fc["title"][:60]}</a>'
+                fl += f' &nbsp;·&nbsp; {date_str} &nbsp;·&nbsp; {rep_str}</div>'
+            fl += '<div style="height:14px;"></div>'
+        fl += '</td></tr>'
+        fl += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
+        template = template.replace("{{flagged_section_html}}", fl)
     else:
-        flag_sec = ""
-    template = template.replace("{{flagged_section_html}}", flag_sec)
+        template = template.replace("{{flagged_section_html}}", "")
 
     # ── Client calls ──────────────────────────────────────────────────────────
-    if client_calls:
-        client_inner = "".join(_call_card(c, show_rag=True) for c in client_calls)
+    sorted_client = sorted(client_calls, key=lambda c: c.get("date") or "", reverse=True)
+    full_client   = sorted_client[:MAX_CLIENT_FULL]
+    rest_client   = sorted_client[MAX_CLIENT_FULL:]
+
+    cc  = _section_header("External", f'Client Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(client_calls)} calls)</span>')
+    cc += '<tr><td style="padding:0 40px 28px;">'
+    if not client_calls:
+        cc += '<p style="font-size:14px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;margin:0;">No client calls this week.</p>'
     else:
-        client_inner = "<p style='font-size:14px;color:#A0AEC0;font-style:italic;'>No client calls this week.</p>"
+        for c in full_client:
+            r = {
+                "id": c.get("id",""), "title": c.get("title") or "Untitled",
+                "call_type": c.get("call_type",""), "date": (c.get("date") or "")[:10],
+                "duration": f"{int(c.get('duration_minutes') or 0)} min",
+                "reps": get_rep_names(c), "rag": detect_rag(c),
+                "bullets": extract_bullets(c), "action_items": extract_action_items(c),
+                "has_summary": bool(c.get("short_summary")),
+                "fireflies_url": f"https://app.fireflies.ai/view/{c.get('id','')}",
+            }
+            cc += _call_card_html(r, show_rag=True)
+        if rest_client:
+            cc += f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-top:8px;"><tr><td style="padding:14px 18px;">'
+            cc += f'<div style="font-size:13px;font-weight:700;color:#4A5568;font-family:Arial,sans-serif;margin-bottom:10px;">{len(rest_client)} additional client calls — see full list in Fireflies</div>'
+            for c in rest_client:
+                reps = ", ".join(get_rep_names(c)) or "—"
+                ff   = f"https://app.fireflies.ai/view/{c.get('id','')}"
+                cc  += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:5px 0;border-bottom:1px solid #EDF2F7;">'
+                cc  += f'<a href="{ff}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{(c.get("title") or "")[:60]}</a>'
+                cc  += f' &nbsp;·&nbsp; {(c.get("date") or "")[:10]} &nbsp;·&nbsp; {reps}</div>'
+            cc += '</td></tr></table>'
+    cc += '</td></tr>'
+    cc += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
+    template = template.replace("{{client_calls_section}}", cc)
 
-    client_sec = f"""<div class="card">
-  <div class="sec-eyebrow">External</div>
-  <div class="sec-title">Client Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(client_calls)} calls)</span></div>
-  {client_inner}
-</div>"""
-    template = template.replace("{{client_calls_section}}", client_sec)
+    # ── Internal calls ────────────────────────────────────────────────────────
+    sorted_internal = sorted(internal_calls, key=lambda c: c.get("date") or "", reverse=True)
+    full_internal   = sorted_internal[:MAX_INTERNAL_FULL]
+    rest_internal   = sorted_internal[MAX_INTERNAL_FULL:]
 
-    # ── Internal calls — compact, no RAG ─────────────────────────────────────
-    if internal_calls:
-        internal_inner = "".join(_call_card(c, show_rag=False) for c in internal_calls)
+    ic  = _section_header("Internal", f'Internal Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(internal_calls)} calls)</span>')
+    ic += '<tr><td style="padding:0 40px 28px;">'
+    if not internal_calls:
+        ic += '<p style="font-size:14px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;margin:0;">No internal calls this week.</p>'
     else:
-        internal_inner = "<p style='font-size:14px;color:#A0AEC0;font-style:italic;'>No internal calls this week.</p>"
-
-    internal_sec = f"""<div class="card">
-  <div class="sec-eyebrow">Internal</div>
-  <div class="sec-title">Internal Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(internal_calls)} calls)</span></div>
-  {internal_inner}
-</div>"""
-    template = template.replace("{{internal_calls_section}}", internal_sec)
+        for c in full_internal:
+            r = {
+                "id": c.get("id",""), "title": c.get("title") or "Untitled",
+                "call_type": c.get("call_type",""), "date": (c.get("date") or "")[:10],
+                "duration": f"{int(c.get('duration_minutes') or 0)} min",
+                "reps": get_rep_names(c), "rag": detect_rag(c),
+                "bullets": extract_bullets(c), "action_items": extract_action_items(c),
+                "has_summary": bool(c.get("short_summary")),
+                "fireflies_url": f"https://app.fireflies.ai/view/{c.get('id','')}",
+            }
+            ic += _call_card_html(r, show_rag=False)
+        if rest_internal:
+            ic += f'<table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#F7FAFC;border:1px solid #E2E8F0;border-radius:8px;margin-top:8px;"><tr><td style="padding:14px 18px;">'
+            ic += f'<div style="font-size:13px;font-weight:700;color:#4A5568;font-family:Arial,sans-serif;margin-bottom:10px;">{len(rest_internal)} additional internal calls not shown</div>'
+            for c in rest_internal:
+                reps = ", ".join(get_rep_names(c)) or "—"
+                ff   = f"https://app.fireflies.ai/view/{c.get('id','')}"
+                ic  += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:5px 0;border-bottom:1px solid #EDF2F7;">'
+                ic  += f'<a href="{ff}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{(c.get("title") or "")[:60]}</a>'
+                ic  += f' &nbsp;·&nbsp; {(c.get("date") or "")[:10]} &nbsp;·&nbsp; {reps}</div>'
+            ic += '</td></tr></table>'
+    ic += '</td></tr>'
+    ic += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
+    template = template.replace("{{internal_calls_section}}", ic)
 
     # ── Missing Fireflies ─────────────────────────────────────────────────────
     if missing_ff:
-        ff_inner = f"""<div class="alert-box">
-    {len(missing_ff)} call(s) not recorded this week. Every call should appear in Fireflies
-    automatically once the Chrome extension is installed and active.
-  </div>"""
-        for mf in missing_ff[:20]:
-            org  = (mf.get("organizer") or "").split("@")[0]
-            date = (mf.get("date") or "")[:10]
-            ff_inner += f"""<div class="ff-row">
-      <strong>{mf['title']}</strong> &nbsp;·&nbsp; {org} &nbsp;·&nbsp; {date}
-    </div>"""
-        if len(missing_ff) > 20:
-            ff_inner += f"<p style='font-size:12px;color:#A0AEC0;font-style:italic;padding-top:8px;'>... and {len(missing_ff)-20} more.</p>"
-        ff_sec = f"""<div class="card">
-  <div class="sec-eyebrow">Coverage</div>
-  <div class="sec-title">Missing Fireflies Recordings</div>
-  {ff_inner}
-</div>"""
+        mf  = _section_header("Coverage", "Missing Fireflies Recordings")
+        mf += '<tr><td style="padding:0 40px 28px;">'
+        mf += f'<div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:12px 16px;font-size:13px;color:#92600A;font-family:Arial,sans-serif;margin-bottom:14px;line-height:1.6;">'
+        mf += f'{len(missing_ff)} call(s) not recorded this week. Ensure the Fireflies Chrome extension is installed and active on all reps browsers.</div>'
+        for m in missing_ff[:MAX_MISSING_FF]:
+            org  = (m.get("organizer") or "").split("@")[0]
+            date = (m.get("date") or "")[:10]
+            mf  += f'<div style="font-size:13px;color:#4A5568;font-family:Arial,sans-serif;padding:8px 0;border-bottom:1px solid #F0F4F8;line-height:1.5;">'
+            mf  += f'<b>{m.get("title","")[:60]}</b> &nbsp;·&nbsp; {org} &nbsp;·&nbsp; {date}</div>'
+        if len(missing_ff) > MAX_MISSING_FF:
+            mf += f'<p style="font-size:12px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;padding-top:6px;margin:0;">... and {len(missing_ff)-MAX_MISSING_FF} more.</p>'
+        mf += '</td></tr>'
     else:
-        ff_sec = """<div class="card">
-  <div class="sec-eyebrow">Coverage</div>
-  <div class="sec-title">Fireflies Coverage</div>
-  <p style="font-size:14px;color:#22543D;font-weight:600;">All calls recorded this week.</p>
-</div>"""
-    template = template.replace("{{missing_ff_section_html}}", ff_sec)
+        mf  = _section_header("Coverage", "Fireflies Coverage")
+        mf += '<tr><td style="padding:0 40px 28px;"><p style="font-size:14px;color:#22543D;font-weight:600;font-family:Arial,sans-serif;margin:0;">All calls recorded this week.</p></td></tr>'
+    mf += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
+    template = template.replace("{{missing_ff_section_html}}", mf)
 
     # ── Repeat issues ─────────────────────────────────────────────────────────
     repeats = digest.get("repeat_issues") or []
     if repeats:
-        rep_inner = "".join(
-            f"""<div class="repeat-card">
-        <strong>{r['client_domain']}</strong> &nbsp;·&nbsp; {r['rep_name']}<br/>
-        <span style="font-size:12px;color:#718096;">{r['note']}</span>
-      </div>"""
-            for r in repeats
-        )
-        rep_sec = f"""<div class="card">
-  <div class="sec-eyebrow">Watch List</div>
-  <div class="sec-title">Repeat Issue Accounts</div>
-  {rep_inner}
-</div>"""
-        template = template.replace("{{repeat_issues_html}}", rep_sec)
+        ri  = _section_header("Watch List", "Repeat Issue Accounts")
+        ri += '<tr><td style="padding:0 40px 28px;">'
+        for r in repeats:
+            ri += f'<div style="background:#FFFBEB;border:1px solid #F6AD55;border-radius:8px;padding:14px 16px;margin-bottom:10px;font-size:13px;color:#4A5568;font-family:Arial,sans-serif;line-height:1.6;">'
+            ri += f'<b>{r["client_domain"]}</b> &nbsp;·&nbsp; {r["rep_name"]}<br/>'
+            ri += f'<span style="font-size:12px;color:#718096;">{r["note"]}</span></div>'
+        ri += '</td></tr>'
+        template = template.replace("{{repeat_issues_html}}", ri)
     else:
         template = template.replace("{{repeat_issues_html}}", "")
 
