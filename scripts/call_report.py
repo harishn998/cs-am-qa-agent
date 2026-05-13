@@ -404,8 +404,12 @@ def build_html(snapshot, client_reports, internal_reports, missing_ff, date_rang
         html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border:1px solid #E2E8F0;border-radius:6px;">'
         html += '<tr style="background:#EBF4FF;"><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">Title</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:90px;font-family:Arial,sans-serif;">Date</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:55px;font-family:Arial,sans-serif;">Dur</td><td style="padding:8px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;width:120px;font-family:Arial,sans-serif;">Rep</td></tr>'
         for r in internal_reports[:30]:
-            reps = ", ".join(r.get("reps") or []) or "—"
-            html += f'<tr style="border-top:1px solid #F0F4F8;"><td style="padding:8px 14px;font-size:13px;font-family:Arial,sans-serif;"><a href="{r['fireflies_url']}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{r['title'][:55]}</a></td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{r['date']}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{r['duration']}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{reps[:22]}</td></tr>'
+            reps   = ", ".join(r.get("reps") or []) or "—"
+            ff_url = r["fireflies_url"]
+            title  = r["title"][:55]
+            date   = r["date"]
+            dur    = r["duration"]
+            html += f'<tr style="border-top:1px solid #F0F4F8;"><td style="padding:8px 14px;font-size:13px;font-family:Arial,sans-serif;"><a href="{ff_url}" style="color:#2B6CB0;text-decoration:none;font-weight:600;">{title}</a></td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{date}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{dur}</td><td style="padding:8px 14px;font-size:12px;color:#718096;font-family:Arial,sans-serif;">{reps[:22]}</td></tr>'
         if total_internal > 30:
             html += f'<tr><td colspan="4" style="padding:8px 14px;font-size:12px;color:#A0AEC0;font-style:italic;font-family:Arial,sans-serif;border-top:1px solid #F0F4F8;">... and {total_internal-30} more internal calls this week</td></tr>'
         html += '</table>'
