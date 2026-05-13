@@ -36,13 +36,11 @@ OUTPUT_DIR      = Path(__file__).parent.parent / "output"
 TEMPLATES_DIR   = Path(__file__).parent / "templates"
 
 # Email recipients
-LAKSHITA_EMAIL  = "lakshita@amzprep.com"
-THOMAS_EMAIL    = "thomas@amzprep.com"
+LAKSHITA_EMAIL  = "harishnath@amzprep.com"
+THOMAS_EMAIL    = "jerun@amzprep.com"
 ARI_EMAIL       = "ari@amzprep.com"
 CC_EMAILS       = [
-    "ari@amzprep.com",
-    "harishnath@amzprep.com",
-    "blair@amzprep.com",
+    "jerun@amzprep.com",
 ]
 
 FROM_EMAIL      = "reports@amzprep.com"
@@ -63,128 +61,256 @@ def load_latest_digest() -> tuple[dict, Path]:
 
 
 # ─── HTML email builder ───────────────────────────────────────────────────────
+
+# Import helpers from call_report (same logic, no duplication)
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).parent))
+from call_report import (
+    detect_rag, rag_label, get_rep_names, extract_bullets,
+    extract_action_items, TEAM_NAMES, RAG_COLORS,
+)
+
+RAG_PILL_CLASS = {"RED": "rag-red", "YELLOW": "rag-yellow", "GREEN": "rag-green"}
+
+
+def _stat_box(num, label):
+    return f"""<div class="stat-box"><div class="num">{num}</div><div class="lbl">{label}</div></div>"""
+
+
+def _call_card(call: dict, show_rag: bool = True) -> str:
+    """Render a single call card with summary bullets and action items."""
+    rag      = detect_rag(call)
+    cfg      = RAG_COLORS.get(rag, RAG_COLORS["YELLOW"])
+    pill_cls = RAG_PILL_CLASS.get(rag, "rag-yellow")
+    reps     = ", ".join(get_rep_names(call)) or "—"
+    date     = (call.get("date") or "")[:10]
+    dur      = f"{int(call.get('duration_minutes') or 0)} min"
+    title    = call.get("title") or "Untitled"
+    ff_url   = f"https://app.fireflies.ai/view/{call.get('id','')}"
+    bullets  = extract_bullets(call)
+    actions  = extract_action_items(call)
+
+    ctype    = call.get("call_type", "")
+    type_lbl = "Merchant" if ctype == "CS_AM" else "Warehouse / Ops" if ctype == "OPS" else "Internal"
+    type_cls = "badge-merchant" if ctype == "CS_AM" else "badge-ops"
+
+    html = f"""
+<div class="call-card" style="background:{cfg['bg']};border-left-color:{cfg['border']};">
+  <div class="call-card-header">
+    <div class="call-title">
+      <a href="{ff_url}">{title}</a>
+      <span class="type-badge {type_cls}">{type_lbl}</span>
+    </div>"""
+
+    if show_rag:
+        html += f"""<span class="rag-pill {pill_cls}" style="flex-shrink:0;">{rag_label(rag)}</span>"""
+
+    html += f"""
+  </div>
+  <div class="call-meta">
+    <strong>Date:</strong> {date} &nbsp;·&nbsp;
+    <strong>Duration:</strong> {dur} &nbsp;·&nbsp;
+    <strong>Rep:</strong> {reps}
+  </div>"""
+
+    if not call.get("short_summary"):
+        html += """<p style="font-size:13px;color:#A0AEC0;font-style:italic;margin-bottom:12px;">
+    No Fireflies summary available for this call.</p>"""
+    else:
+        html += """<div class="summary-label">Call Summary</div><ul class="bullets">"""
+        for b in bullets:
+            html += f"<li>{b}</li>"
+        html += "</ul>"
+
+    html += """<div class="action-block"><div class="action-block-title">Action Items &amp; Takeaways</div>"""
+    if actions:
+        for item in actions:
+            html += f"""<div class="action-row">
+      <span class="action-owner">{item['owner']}</span>
+      <span class="action-text">{item['action']}</span>
+    </div>"""
+    else:
+        html += """<p class="no-action">No action items captured for this call.</p>"""
+    html += "</div>"
+
+    html += f"""<a href="{ff_url}" class="ff-link">View full transcript in Fireflies &rarr;</a>
+</div>"""
+    return html
+
+
 def build_email_html(digest: dict, recipient_name: str) -> str:
-    template = (TEMPLATES_DIR / "email_digest.html").read_text()
+    template   = (TEMPLATES_DIR / "email_digest.html").read_text()
+    date_range = digest["date_range"]
+    week_range = f"{date_range['from']} to {date_range['to']}"
 
-    overall     = digest["overall"]
-    date_range  = digest["date_range"]
-    week_range  = f"{date_range['from']} → {date_range['to']}"
+    # All calls from digest — graded calls JSON has full call data
+    all_calls     = digest.get("calls") or []
+    client_calls  = [c for c in all_calls if c.get("call_type") in ("CS_AM", "OPS")]
+    internal_calls= [c for c in all_calls if c.get("call_type") == "INTERNAL"]
+    missing_ff    = digest.get("missing_fireflies") or []
 
-    # ── Overall stats ──────────────────────────────────────────────────────────
-    template = template.replace("{{week_range}}",   week_range)
-    template = template.replace("{{total_graded}}", str(overall.get("total_graded", 0)))
-    template = template.replace("{{avg_score}}",    str(overall.get("avg_score", "—")))
-    template = template.replace("{{total_flags}}",  str(overall.get("total_flags", 0)))
-    template = template.replace("{{missing_ff}}",   str(len(digest.get("missing_fireflies") or [])))
+    # RAG counts across client calls
+    rag_counts = {"RED": 0, "YELLOW": 0, "GREEN": 0}
+    for c in client_calls:
+        rag_counts[detect_rag(c)] += 1
 
-    # ── Rep scorecard rows ─────────────────────────────────────────────────────
-    trend_map = {
-        "up":       '<span class="trend-up">↑ Up</span>',
-        "down":     '<span class="trend-down">↓ Down</span>',
-        "stable":   '<span class="trend-stable">→ Stable</span>',
-        "new":      '<span class="trend-new">★ New</span>',
-        "no_calls": '<span class="trend-stable">—</span>',
-    }
-    rows_html = ""
-    for rep in digest["rep_scorecard"]:
-        grade     = rep.get("grade") or "—"
-        avg       = rep.get("avg_score")
-        trend     = trend_map.get(rep.get("trend", ""), "")
-        badge     = f'<span class="badge grade-{grade}">{grade}</span>' if grade != "—" else "—"
-        rows_html += f"""
-        <tr>
-          <td><strong>{rep['name']}</strong></td>
-          <td>{rep['call_count']}</td>
-          <td><strong>{avg if avg is not None else '—'}</strong></td>
-          <td>{badge}</td>
-          <td>{trend}</td>
-          <td>{rep['flag_count']}</td>
-        </tr>"""
-    template = template.replace("{{rep_scorecard_rows}}", rows_html)
+    # CSM client call counts
+    from collections import defaultdict
+    csm_counts = defaultdict(int)
+    for c in client_calls:
+        for email in (c.get("team_members_on_call") or []):
+            if email in TEAM_NAMES:
+                csm_counts[email] += 1
+    max_count = max(csm_counts.values()) if csm_counts else 1
 
-    # ── Top calls ──────────────────────────────────────────────────────────────
-    top_html = ""
-    for call in digest.get("top_calls") or []:
-        grade  = call.get("grade", "")
-        score  = call.get("score_total", 0)
-        members = ", ".join(call.get("team_members", []))
-        top_html += f"""
-        <div class="call-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div>
-              <div class="call-title">{call['title']}</div>
-              <div class="call-meta">{call.get('date','')[:10]} &nbsp;·&nbsp; {call.get('duration_minutes','?')} min &nbsp;·&nbsp; {members}</div>
-            </div>
-            <div style="text-align:right;">
-              <div class="call-score" style="color:#2e7d32;">{score}</div>
-              <span class="badge grade-{grade}">{grade}</span>
-            </div>
-          </div>
-          <a href="{call['fireflies_url']}" class="call-link">▶ View in Fireflies</a>
-        </div>"""
-    template = template.replace("{{top_calls_html}}", top_html or "<p style='color:#6b7a8d;font-size:13px;'>No top calls this week.</p>")
+    # ── Header tokens ─────────────────────────────────────────────────────────
+    template = template.replace("{{recipient_name}}", recipient_name)
+    template = template.replace("{{week_range}}", week_range)
 
-    # ── Bottom calls ───────────────────────────────────────────────────────────
-    bottom_html = ""
-    for call in digest.get("bottom_calls") or []:
-        grade   = call.get("grade", "")
-        score   = call.get("score_total", 0)
-        members = ", ".join(call.get("team_members", []))
-        coaching = f'<div class="call-coaching">💡 {call["coaching_note"]}</div>' if call.get("coaching_note") else ""
-        flags_html = " ".join(f'<span class="flag-pill">{f}</span>' for f in (call.get("auto_flags") or []))
-        bottom_html += f"""
-        <div class="call-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div>
-              <div class="call-title">{call['title']}</div>
-              <div class="call-meta">{call.get('date','')[:10]} &nbsp;·&nbsp; {call.get('duration_minutes','?')} min &nbsp;·&nbsp; {members}</div>
-              {f'<div style="margin-top:6px;">{flags_html}</div>' if flags_html else ''}
-            </div>
-            <div style="text-align:right;">
-              <div class="call-score" style="color:#c62828;">{score}</div>
-              <span class="badge grade-{grade}">{grade}</span>
-            </div>
-          </div>
-          {coaching}
-          <div style="margin-top:10px;"><a href="{call['fireflies_url']}" class="call-link">▶ View in Fireflies</a></div>
-        </div>"""
-    template = template.replace("{{bottom_calls_html}}", bottom_html or "<p style='color:#6b7a8d;font-size:13px;'>No coaching calls this week — great job!</p>")
+    # ── Snapshot section ──────────────────────────────────────────────────────
+    snap = f"""<div class="card">
+  <div class="sec-eyebrow">Overview</div>
+  <div class="sec-title">Week at a Glance</div>
+  <div class="stats-grid">
+    {_stat_box(len(client_calls), "Client Calls")}
+    {_stat_box(len([c for c in client_calls if c.get("call_type")=="CS_AM"]), "Merchant Calls")}
+    {_stat_box(len([c for c in client_calls if c.get("call_type")=="OPS"]), "Warehouse / Ops")}
+    {_stat_box(len(internal_calls), "Internal Calls")}
+  </div>
+  <div class="stats-grid" style="margin-top:12px;">
+    <div class="stat-box" style="border-color:#FC8181;"><div class="num" style="color:#C53030;">{rag_counts['RED']}</div><div class="lbl">Needs Attention</div></div>
+    <div class="stat-box" style="border-color:#F6AD55;"><div class="num" style="color:#92600A;">{rag_counts['YELLOW']}</div><div class="lbl">Monitor Closely</div></div>
+    <div class="stat-box" style="border-color:#68D391;"><div class="num" style="color:#22543D;">{rag_counts['GREEN']}</div><div class="lbl">On Track</div></div>
+    {_stat_box(len(missing_ff), "Missing Recordings")}
+  </div>
+</div>"""
+    template = template.replace("{{snapshot_section}}", snap)
 
-    # ── Flagged calls section ──────────────────────────────────────────────────
+    # ── CSM breakdown ─────────────────────────────────────────────────────────
+    csm_rows = ""
+    for email, count in sorted(csm_counts.items(), key=lambda x: -x[1]):
+        name = TEAM_NAMES.get(email, email.split("@")[0].title())
+        pct  = int((count / max_count) * 100)
+        csm_rows += f"""<tr>
+      <td class="rep-name">{name}</td>
+      <td class="rep-count">{count}</td>
+      <td><div class="bar-wrap"><div class="bar-fill" style="width:{pct}%;"></div></div></td>
+    </tr>"""
+
+    csm_sec = f"""<div class="card">
+  <div class="sec-eyebrow">Team</div>
+  <div class="sec-title">CSM Client Call Breakdown</div>
+  <table class="csm-table">
+    <thead><tr>
+      <th>CSM</th><th>Client Calls</th><th style="width:180px;">Volume</th>
+    </tr></thead>
+    <tbody>{csm_rows}</tbody>
+  </table>
+</div>"""
+    template = template.replace("{{csm_section}}", csm_sec)
+
+    # ── Flagged calls ─────────────────────────────────────────────────────────
     flagged = digest.get("flagged_calls") or {}
     if flagged:
-        flagged_html = '<div class="section"><div class="section-title">Auto-Flagged Calls — Manager Review</div>'
-        for flag_key, flag_calls in flagged.items():
+        flag_inner = ""
+        priority_order = [
+            "churn_language", "competitor_mentioned", "sla_miss_no_resolution",
+            "pricing_pushback", "negative_sentiment_end", "no_next_step",
+            "short_call", "fireflies_missing", "repeat_issue",
+        ]
+        sorted_flags = sorted(
+            flagged.items(),
+            key=lambda x: priority_order.index(x[0]) if x[0] in priority_order else 99
+        )
+        for flag_key, flag_calls in sorted_flags[:5]:
             flag_label = digest.get("flag_definitions", {}).get(flag_key, flag_key)
-            flagged_html += f'<div class="flag-title">{flag_label}</div>'
-            for fc in flag_calls:
-                score_txt = f" · Score: {fc['score_total']}" if fc.get("score_total") is not None else ""
-                flagged_html += f'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #f0f4f8;"><a href="{fc["fireflies_url"]}" class="call-link">{fc["title"]}</a> <span style="color:#6b7a8d;">— {fc.get("date","")[:10]}{score_txt}</span></div>'
-            flagged_html += '<div class="divider"></div>'
-        flagged_html += "</div>"
+            flag_inner += f'<div class="flag-section-title">{flag_label}</div>'
+            for fc in flag_calls[:3]:
+                date_str = (fc.get("date") or "")[:10]
+                rep_str  = (fc.get("organizer") or "").split("@")[0]
+                flag_inner += f"""<div class="flag-call-row">
+          <a href="{fc['fireflies_url']}">{fc['title']}</a>
+          &nbsp;·&nbsp; {date_str} &nbsp;·&nbsp; {rep_str}
+        </div>"""
+            flag_inner += '<div style="height:14px;"></div>'
+        flag_sec = f"""<div class="card">
+  <div class="sec-eyebrow">Action Required</div>
+  <div class="sec-title">Flagged Calls</div>
+  {flag_inner}
+</div>"""
     else:
-        flagged_html = '<div class="section"><div class="section-title">Auto-Flagged Calls</div><p style="color:#6b7a8d;font-size:13px;">No flags raised this week.</p></div>'
-    template = template.replace("{{flagged_section_html}}", flagged_html)
+        flag_sec = ""
+    template = template.replace("{{flagged_section_html}}", flag_sec)
 
-    # ── Missing Fireflies ──────────────────────────────────────────────────────
-    missing = digest.get("missing_fireflies") or []
-    if missing:
-        mff_html = '<div class="section"><div class="section-title">Missing Fireflies Recordings</div><div class="alert">These calls were not recorded. Check Chrome extension on affected machines.</div>'
-        for mf in missing:
-            mff_html += f'<div style="font-size:13px;padding:6px 0;border-bottom:1px solid #f0f4f8;">{mf["title"]} <span style="color:#6b7a8d;">— {mf.get("organizer","")} · {mf.get("date","")[:10]}</span></div>'
-        mff_html += "</div>"
+    # ── Client calls ──────────────────────────────────────────────────────────
+    if client_calls:
+        client_inner = "".join(_call_card(c, show_rag=True) for c in client_calls)
     else:
-        mff_html = '<div class="section"><div class="section-title">Fireflies Coverage</div><p style="color:#2e7d32;font-size:13px;">All calls recorded this week.</p></div>'
-    template = template.replace("{{missing_ff_section_html}}", mff_html)
+        client_inner = "<p style='font-size:14px;color:#A0AEC0;font-style:italic;'>No client calls this week.</p>"
 
-    # ── Repeat issues ──────────────────────────────────────────────────────────
+    client_sec = f"""<div class="card">
+  <div class="sec-eyebrow">External</div>
+  <div class="sec-title">Client Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(client_calls)} calls)</span></div>
+  {client_inner}
+</div>"""
+    template = template.replace("{{client_calls_section}}", client_sec)
+
+    # ── Internal calls — compact, no RAG ─────────────────────────────────────
+    if internal_calls:
+        internal_inner = "".join(_call_card(c, show_rag=False) for c in internal_calls)
+    else:
+        internal_inner = "<p style='font-size:14px;color:#A0AEC0;font-style:italic;'>No internal calls this week.</p>"
+
+    internal_sec = f"""<div class="card">
+  <div class="sec-eyebrow">Internal</div>
+  <div class="sec-title">Internal Calls <span style="font-size:14px;font-weight:500;color:#A0AEC0;">({len(internal_calls)} calls)</span></div>
+  {internal_inner}
+</div>"""
+    template = template.replace("{{internal_calls_section}}", internal_sec)
+
+    # ── Missing Fireflies ─────────────────────────────────────────────────────
+    if missing_ff:
+        ff_inner = f"""<div class="alert-box">
+    {len(missing_ff)} call(s) not recorded this week. Every call should appear in Fireflies
+    automatically once the Chrome extension is installed and active.
+  </div>"""
+        for mf in missing_ff[:20]:
+            org  = (mf.get("organizer") or "").split("@")[0]
+            date = (mf.get("date") or "")[:10]
+            ff_inner += f"""<div class="ff-row">
+      <strong>{mf['title']}</strong> &nbsp;·&nbsp; {org} &nbsp;·&nbsp; {date}
+    </div>"""
+        if len(missing_ff) > 20:
+            ff_inner += f"<p style='font-size:12px;color:#A0AEC0;font-style:italic;padding-top:8px;'>... and {len(missing_ff)-20} more.</p>"
+        ff_sec = f"""<div class="card">
+  <div class="sec-eyebrow">Coverage</div>
+  <div class="sec-title">Missing Fireflies Recordings</div>
+  {ff_inner}
+</div>"""
+    else:
+        ff_sec = """<div class="card">
+  <div class="sec-eyebrow">Coverage</div>
+  <div class="sec-title">Fireflies Coverage</div>
+  <p style="font-size:14px;color:#22543D;font-weight:600;">All calls recorded this week.</p>
+</div>"""
+    template = template.replace("{{missing_ff_section_html}}", ff_sec)
+
+    # ── Repeat issues ─────────────────────────────────────────────────────────
     repeats = digest.get("repeat_issues") or []
     if repeats:
-        rep_html = '<div class="section"><div class="section-title">Repeat Issue Accounts</div>'
-        for r in repeats:
-            rep_html += f'<div class="call-card"><strong>{r["client_domain"]}</strong> · {r["rep_name"]}<div style="font-size:12px;color:#6b7a8d;margin-top:4px;">{r["note"]}</div></div>'
-        rep_html += "</div>"
-        template = template.replace("{{repeat_issues_html}}", rep_html)
+        rep_inner = "".join(
+            f"""<div class="repeat-card">
+        <strong>{r['client_domain']}</strong> &nbsp;·&nbsp; {r['rep_name']}<br/>
+        <span style="font-size:12px;color:#718096;">{r['note']}</span>
+      </div>"""
+            for r in repeats
+        )
+        rep_sec = f"""<div class="card">
+  <div class="sec-eyebrow">Watch List</div>
+  <div class="sec-title">Repeat Issue Accounts</div>
+  {rep_inner}
+</div>"""
+        template = template.replace("{{repeat_issues_html}}", rep_sec)
     else:
         template = template.replace("{{repeat_issues_html}}", "")
 

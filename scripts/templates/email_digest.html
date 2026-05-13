@@ -2,155 +2,143 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Zeno Weekly Call QA Digest</title>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Zeno — Weekly Team Digest</title>
 <style>
-  body { margin:0; padding:0; background:#f4f6f9; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif; color:#1a1a2e; }
-  .wrapper { max-width:680px; margin:0 auto; padding:28px 16px; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #EAEEF3; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1A202C; -webkit-font-smoothing: antialiased; }
+.outer { max-width: 680px; margin: 0 auto; padding: 32px 16px 48px; }
 
-  /* Header */
-  .header { background:linear-gradient(135deg,#1E3A5F 0%,#2E75B6 100%); border-radius:12px 12px 0 0; padding:32px 36px; }
-  .header-logo { font-size:22px; font-weight:800; color:#fff; letter-spacing:1px; line-height:1.3; }
-  .header-logo span { color:#64B5F6; }
-  .header-subtitle { color:#90CAF9; font-size:13px; margin-top:6px; }
-  .header-week { color:#fff; font-size:14px; margin-top:16px; font-weight:600; }
+/* ── Header ── */
+.hdr { background: linear-gradient(135deg, #1A365D 0%, #2B6CB0 100%); border-radius: 12px 12px 0 0; padding: 36px 40px; }
+.hdr-brand { font-size: 12px; font-weight: 700; color: #90CDF4; letter-spacing: 2.5px; text-transform: uppercase; margin-bottom: 10px; }
+.hdr-title { font-size: 26px; font-weight: 800; color: #FFFFFF; line-height: 1.25; }
+.hdr-sub { font-size: 13px; color: #BEE3F8; margin-top: 8px; line-height: 1.6; }
 
-  /* Sections */
-  .section { background:#fff; padding:28px 36px; border-left:1px solid #e8edf2; border-right:1px solid #e8edf2; }
-  .section + .section { border-top:1px solid #EDF2F7; }
-  .section:last-of-type { border-radius:0 0 12px 12px; border-bottom:1px solid #e8edf2; }
-  .section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.4px; color:#2E75B6; margin:0 0 20px 0; padding-bottom:10px; border-bottom:2px solid #e8edf2; }
+/* ── Cards ── */
+.card { background: #FFFFFF; border-left: 1px solid #DDE3EC; border-right: 1px solid #DDE3EC; padding: 32px 40px; }
+.card + .card { border-top: 1px solid #EDF2F7; }
+.card-last { border-radius: 0 0 12px 12px; border-bottom: 1px solid #DDE3EC; }
 
-  /* Stats */
-  .stats-row { display:flex; gap:14px; flex-wrap:wrap; }
-  .stat-card { flex:1; min-width:120px; background:#f8fafd; border:1px solid #e0e8f0; border-radius:10px; padding:18px 16px 16px; text-align:center; }
-  .stat-card .value { font-size:28px; font-weight:800; color:#1E3A5F; line-height:1.1; }
-  .stat-card .label { font-size:11px; color:#6b7a8d; margin-top:6px; text-transform:uppercase; letter-spacing:0.6px; line-height:1.4; }
+/* ── Section headings ── */
+.sec-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #A0AEC0; margin-bottom: 5px; }
+.sec-title { font-size: 18px; font-weight: 700; color: #1A365D; padding-bottom: 14px; border-bottom: 2px solid #EBF4FF; margin-bottom: 22px; line-height: 1.3; }
 
-  /* Scorecard table */
-  table { width:100%; border-collapse:collapse; font-size:13px; }
-  th { background:#f0f4f8; color:#4a5568; font-weight:600; text-align:left; padding:10px 14px; font-size:11px; text-transform:uppercase; letter-spacing:0.6px; }
-  td { padding:11px 14px; border-bottom:1px solid #f0f4f8; vertical-align:middle; line-height:1.5; }
-  tr:last-child td { border-bottom:none; }
-  tr:hover td { background:#fafbfd; }
+/* ── Stat grid ── */
+.stats-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+.stat-box { flex: 1; min-width: 120px; background: #F7FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 20px 14px 18px; text-align: center; }
+.stat-box .num { font-size: 32px; font-weight: 800; color: #1A365D; line-height: 1; }
+.stat-box .lbl { font-size: 11px; color: #718096; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.8px; line-height: 1.4; }
 
-  /* Grade badges */
-  .badge { display:inline-block; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:700; }
-  .grade-A { background:#e8f5e9; color:#2e7d32; }
-  .grade-B { background:#e3f2fd; color:#1565c0; }
-  .grade-C { background:#fff8e1; color:#f57f17; }
-  .grade-D { background:#fce4ec; color:#c62828; }
+/* ── CSM table ── */
+.csm-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.csm-table thead tr { background: #EBF4FF; }
+.csm-table th { padding: 11px 14px; text-align: left; font-size: 11px; font-weight: 700; color: #2C5282; text-transform: uppercase; letter-spacing: 0.7px; }
+.csm-table td { padding: 12px 14px; border-bottom: 1px solid #F0F4F8; vertical-align: middle; }
+.csm-table tr:last-child td { border-bottom: none; }
+.csm-table .rep-name { font-weight: 600; color: #2D3748; }
+.csm-table .rep-count { font-weight: 700; color: #2B6CB0; }
+.bar-wrap { height: 8px; background: #EBF4FF; border-radius: 4px; overflow: hidden; min-width: 80px; margin-top: 6px; }
+.bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3182CE, #63B3ED); }
 
-  /* Trend */
-  .trend-up     { color:#2e7d32; font-weight:700; }
-  .trend-down   { color:#c62828; font-weight:700; }
-  .trend-stable { color:#6b7a8d; }
-  .trend-new    { color:#7b1fa2; font-size:11px; }
+/* ── RAG pills ── */
+.rag-pill { display: inline-block; font-size: 10px; font-weight: 700; padding: 4px 12px; border-radius: 20px; letter-spacing: 0.6px; text-transform: uppercase; }
+.rag-red    { background: #FED7D7; color: #C53030; }
+.rag-yellow { background: #FEFCBF; color: #92600A; }
+.rag-green  { background: #C6F6D5; color: #22543D; }
 
-  /* Call cards */
-  .call-card { background:#f8fafd; border:1px solid #e0e8f0; border-radius:10px; padding:18px 20px; margin-bottom:14px; }
-  .call-card:last-child { margin-bottom:0; }
-  .call-title { font-weight:700; font-size:14px; color:#1E3A5F; margin-bottom:6px; line-height:1.4; }
-  .call-meta { font-size:12px; color:#6b7a8d; margin-bottom:10px; line-height:1.6; }
-  .call-score { font-size:22px; font-weight:800; line-height:1.1; }
-  .call-coaching { background:#fff8e1; border-left:3px solid #f9a825; padding:12px 14px; font-size:12px; color:#5d4037; border-radius:0 6px 6px 0; margin-top:12px; line-height:1.6; }
-  .call-link { font-size:12px; color:#2E75B6; text-decoration:none; font-weight:600; }
-  .call-link:hover { text-decoration:underline; }
+/* ── Call cards ── */
+.call-card { border-radius: 10px; padding: 22px 24px; margin-bottom: 16px; border-left: 4px solid #CBD5E0; background: #F7FAFC; }
+.call-card:last-child { margin-bottom: 0; }
+.call-card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 8px; }
+.call-title { font-size: 15px; font-weight: 700; color: #1A202C; line-height: 1.4; }
+.call-title a { color: #1A202C; text-decoration: none; }
+.call-meta { font-size: 13px; color: #718096; margin-bottom: 14px; line-height: 1.6; }
+.call-meta strong { color: #4A5568; font-weight: 600; }
+.type-badge { display: inline-block; font-size: 10px; font-weight: 700; padding: 3px 9px; border-radius: 10px; margin-left: 8px; vertical-align: middle; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+.badge-merchant { background: #EBF4FF; color: #2B6CB0; }
+.badge-ops      { background: #FAF5FF; color: #6B46C1; }
 
-  /* Flag pills */
-  .flag-pill { display:inline-block; background:#fff0f0; color:#c62828; border:1px solid #ffcdd2; border-radius:20px; padding:3px 10px; font-size:11px; font-weight:600; margin:3px 3px 3px 0; }
-  .flag-title { font-weight:600; font-size:13px; color:#c62828; margin-bottom:8px; }
+/* ── Summary bullets ── */
+.summary-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #718096; margin-bottom: 10px; }
+.bullets { list-style: none; padding: 0; margin: 0 0 16px 0; }
+.bullets li { font-size: 14px; color: #2D3748; line-height: 1.7; padding: 5px 0 5px 18px; position: relative; border-bottom: 1px solid #EDF2F7; }
+.bullets li:last-child { border-bottom: none; padding-bottom: 0; }
+.bullets li::before { content: "–"; position: absolute; left: 0; color: #A0AEC0; font-weight: 700; }
 
-  /* Divider */
-  .divider { height:1px; background:#e8edf2; margin:22px 0; }
+/* ── Action items ── */
+.action-block { background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 16px 18px; margin-top: 14px; }
+.action-block-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #4A5568; margin-bottom: 12px; }
+.action-row { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid #F0F4F8; font-size: 13px; line-height: 1.5; }
+.action-row:last-child { border-bottom: none; padding-bottom: 0; }
+.action-owner { font-weight: 700; color: #2B6CB0; min-width: 110px; flex-shrink: 0; }
+.action-text  { color: #2D3748; }
+.no-action    { font-size: 13px; color: #A0AEC0; font-style: italic; }
 
-  /* Footer */
-  .footer { text-align:center; padding:20px; font-size:11px; color:#9aa5b1; line-height:1.8; }
-  .footer strong { color:#2E75B6; }
+/* ── Flag pills ── */
+.flag-pill { display: inline-block; background: #FFF0F0; color: #C53030; border: 1px solid #FFCDD2; border-radius: 20px; padding: 3px 10px; font-size: 11px; font-weight: 600; margin: 3px 3px 3px 0; }
+.flag-section-title { font-size: 13px; font-weight: 700; color: #C53030; margin-bottom: 8px; }
+.flag-call-row { font-size: 13px; padding: 7px 0; border-bottom: 1px solid #F0F4F8; line-height: 1.5; color: #4A5568; }
+.flag-call-row:last-child { border-bottom: none; }
+.flag-call-row a { color: #2B6CB0; text-decoration: none; font-weight: 600; }
 
-  /* Alert */
-  .alert { background:#fff3cd; border:1px solid #ffc107; border-radius:8px; padding:12px 16px; font-size:13px; color:#856404; margin-bottom:16px; line-height:1.5; }
+/* ── FF coverage ── */
+.ff-row { font-size: 13px; padding: 8px 0; border-bottom: 1px solid #F0F4F8; color: #4A5568; line-height: 1.5; }
+.ff-row:last-child { border-bottom: none; }
+.alert-box { background: #FFFBEB; border: 1px solid #F6AD55; border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #92600A; margin-bottom: 16px; line-height: 1.6; }
+
+/* ── Fireflies link ── */
+.ff-link { display: inline-block; margin-top: 14px; font-size: 12px; font-weight: 600; color: #3182CE; text-decoration: none; }
+
+/* ── Repeat issues ── */
+.repeat-card { background: #FFFBEB; border: 1px solid #F6AD55; border-radius: 8px; padding: 14px 16px; margin-bottom: 10px; font-size: 13px; color: #4A5568; line-height: 1.6; }
+.repeat-card:last-child { margin-bottom: 0; }
+
+/* ── Footer ── */
+.footer { text-align: center; padding: 24px 20px; font-size: 12px; color: #A0AEC0; line-height: 2; }
+.footer a { color: #3182CE; text-decoration: none; }
+.footer strong { color: #4A5568; }
 </style>
 </head>
 <body>
-<div class="wrapper">
+<div class="outer">
 
-  <!-- Header -->
-  <div class="header">
-    <div class="header-logo"><span>ZENO</span></div>
-    <div class="header-subtitle">CS/AM Call Quality Agent — AMZ Prep</div>
-    <div class="header-week">Weekly Digest · {{week_range}}</div>
-  </div>
+<!-- HEADER -->
+<div class="hdr">
+  <div class="hdr-brand">Zeno · AMZ Prep</div>
+  <div class="hdr-title">Weekly Team Digest</div>
+  <div class="hdr-sub">Hi {{recipient_name}} &nbsp;·&nbsp; Week: {{week_range}}</div>
+</div>
 
-  <!-- Overall Stats -->
-  <div class="section">
-    <div class="section-title">Week at a Glance</div>
-    <div class="stats-row">
-      <div class="stat-card">
-        <div class="value">{{total_graded}}</div>
-        <div class="label">Calls Graded</div>
-      </div>
-      <div class="stat-card">
-        <div class="value">{{avg_score}}</div>
-        <div class="label">Avg Score</div>
-      </div>
-      <div class="stat-card">
-        <div class="value">{{total_flags}}</div>
-        <div class="label">Flags Raised</div>
-      </div>
-      <div class="stat-card">
-        <div class="value">{{missing_ff}}</div>
-        <div class="label">Missing Fireflies</div>
-      </div>
-    </div>
-  </div>
+<!-- SNAPSHOT -->
+{{snapshot_section}}
 
-  <!-- Rep Scorecard -->
-  <div class="section">
-    <div class="section-title">Team Scorecard</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Rep</th>
-          <th>Calls</th>
-          <th>Avg Score</th>
-          <th>Grade</th>
-          <th>Trend</th>
-          <th>Flags</th>
-        </tr>
-      </thead>
-      <tbody>
-        {{rep_scorecard_rows}}
-      </tbody>
-    </table>
-  </div>
+<!-- CSM BREAKDOWN -->
+{{csm_section}}
 
-  <!-- Top Calls -->
-  <div class="section">
-    <div class="section-title">Top 3 Calls — Share in Huddle</div>
-    {{top_calls_html}}
-  </div>
+<!-- FLAGGED CALLS -->
+{{flagged_section_html}}
 
-  <!-- Bottom Calls -->
-  <div class="section">
-    <div class="section-title">Bottom 3 Calls — Coaching Required</div>
-    {{bottom_calls_html}}
-  </div>
+<!-- CLIENT CALLS -->
+{{client_calls_section}}
 
-  <!-- Auto-Flagged Calls -->
-  {{flagged_section_html}}
+<!-- INTERNAL CALLS -->
+{{internal_calls_section}}
 
-  <!-- Missing Fireflies -->
-  {{missing_ff_section_html}}
+<!-- MISSING FIREFLIES -->
+{{missing_ff_section_html}}
 
-  <!-- Repeat Issues -->
-  {{repeat_issues_html}}
+<!-- REPEAT ISSUES -->
+{{repeat_issues_html}}
 
-  <!-- Footer -->
+<!-- FOOTER -->
+<div class="card card-last">
   <div class="footer">
-    Sent by <strong>Zeno</strong> · AMZ Prep Call QA Agent<br/>
-    Questions? Reach out to Ari · <a href="mailto:ari@amzprep.com" style="color:#2E75B6;">ari@amzprep.com</a>
+    Sent by <strong>Zeno</strong> &nbsp;·&nbsp; AMZ Prep Call QA Agent<br/>
+    Questions? Reach out to Ari &nbsp;·&nbsp;
+    <a href="mailto:ari@amzprep.com">ari@amzprep.com</a>
   </div>
+</div>
 
 </div>
 </body>

@@ -294,16 +294,17 @@ def main():
     overall = build_overall_stats(graded_data)
 
     digest = {
-        "run_date":         run_date,
-        "date_range":       graded_data["date_range"],
-        "overall":          overall,
-        "rep_scorecard":    rep_scorecard,
-        "top_calls":        top_calls,
-        "bottom_calls":     bottom_calls,
-        "flagged_calls":    flagged_calls,
+        "run_date":          run_date,
+        "date_range":        graded_data["date_range"],
+        "overall":           overall,
+        "rep_scorecard":     rep_scorecard,
+        "top_calls":         top_calls,
+        "bottom_calls":      bottom_calls,
+        "flagged_calls":     flagged_calls,
         "missing_fireflies": missing_fireflies,
-        "repeat_issues":    repeat_issues,
-        "flag_definitions": AUTO_FLAGS,
+        "repeat_issues":     repeat_issues,
+        "flag_definitions":  AUTO_FLAGS,
+        "calls":             graded_data["calls"],   # full call list for per-call summaries
     }
 
     out_path = OUTPUT_DIR / f"digest_{run_date}.json"
