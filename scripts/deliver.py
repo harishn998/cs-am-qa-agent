@@ -105,23 +105,21 @@ def build_email_html(digest: dict, recipient_name: str) -> str:
     snap  = _section_header("Overview", "Week at a Glance")
     snap += '<tr><td style="padding:0 40px 10px;">'
     snap += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-    snap += _stat_cell(len(client_calls), "Client Calls")
-    snap += _stat_cell(len([c for c in client_calls if c.get("call_type")=="CS_AM"]), "Merchant Calls")
-    snap += _stat_cell(len([c for c in client_calls if c.get("call_type")=="OPS"]), "Warehouse / Ops")
+    snap += _stat_cell(len(client_calls),   "Customer Calls")
     snap += _stat_cell(len(internal_calls), "Internal Calls")
     snap += '</tr></table></td></tr>'
     snap += '<tr><td style="padding:10px 40px 28px;">'
     snap += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-    snap += _stat_cell(rag_counts["RED"],    "Needs Attention",  "#C53030")
-    snap += _stat_cell(rag_counts["YELLOW"], "Monitor Closely",  "#92600A")
-    snap += _stat_cell(rag_counts["GREEN"],  "On Track",         "#22543D")
-    snap += _stat_cell(len(missing_ff),      "Missing Recordings","#718096")
+    snap += _stat_cell(rag_counts["RED"],    "Needs Attention",    "#C53030")
+    snap += _stat_cell(rag_counts["YELLOW"], "Monitor Closely",    "#92600A")
+    snap += _stat_cell(rag_counts["GREEN"],  "On Track",           "#22543D")
+    snap += _stat_cell(len(missing_ff),      "Missing Recordings", "#718096")
     snap += '</tr></table></td></tr>'
     snap += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
     template = template.replace("{{snapshot_section}}", snap)
 
     # ── CSM breakdown ─────────────────────────────────────────────────────────
-    csm  = _section_header("Team", "CSM Client Call Breakdown")
+    csm  = _section_header("Team", "Customer Calls by CSM")
     csm += '<tr><td style="padding:0 40px 28px;">'
     csm += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:6px;overflow:hidden;">'
     csm += '<tr style="background:#EBF4FF;"><td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">CSM</td>'

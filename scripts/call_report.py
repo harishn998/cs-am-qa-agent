@@ -334,16 +334,15 @@ def build_html(snapshot, client_reports, internal_reports, missing_ff, date_rang
     html += _section_header("Overview", "Week at a Glance")
     html += '<tr><td style="padding:0 40px 10px;">'
     html += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-    html += _stat_cell(snapshot["total_cs_am"], "Merchant Calls")
-    html += _stat_cell(snapshot["total_ops"], "Warehouse / Ops")
+    html += _stat_cell(snapshot["total_client"],   "Customer Calls")
     html += _stat_cell(snapshot["total_internal"], "Internal Calls")
-    html += _stat_cell(snapshot["total_all"], "Total Calls")
+    html += _stat_cell(snapshot["total_all"],      "Total Calls")
     html += '</tr></table></td></tr>'
     html += '<tr><td style="padding:10px 40px 28px;">'
     html += '<table width="100%" cellpadding="0" cellspacing="0" border="0"><tr>'
-    html += _stat_cell(rag["RED"],    "Needs Attention",  "#C53030")
-    html += _stat_cell(rag["YELLOW"], "Monitor Closely",  "#92600A")
-    html += _stat_cell(rag["GREEN"],  "On Track",         "#22543D")
+    html += _stat_cell(rag["RED"],      "Needs Attention",    "#C53030")
+    html += _stat_cell(rag["YELLOW"],   "Monitor Closely",    "#92600A")
+    html += _stat_cell(rag["GREEN"],    "On Track",           "#22543D")
     html += _stat_cell(len(missing_ff), "Missing Recordings", "#718096")
     html += '</tr></table></td></tr>'
 
@@ -351,7 +350,7 @@ def build_html(snapshot, client_reports, internal_reports, missing_ff, date_rang
     html += '<tr><td style="padding:0 40px;"><div style="height:1px;background:#EDF2F7;"></div></td></tr>'
 
     # ── CSM Breakdown ─────────────────────────────────────────────────────────
-    html += _section_header("Team", "CSM Client Call Breakdown")
+    html += _section_header("Team", "Customer Calls by CSM")
     html += '<tr><td style="padding:0 40px 28px;">'
     html += '<table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-radius:6px;overflow:hidden;">'
     html += '<tr style="background:#EBF4FF;"><td style="padding:10px 14px;font-size:11px;font-weight:700;color:#2C5282;text-transform:uppercase;letter-spacing:0.7px;font-family:Arial,sans-serif;">CSM</td>'
